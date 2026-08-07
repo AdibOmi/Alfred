@@ -1,4 +1,5 @@
 # Alfred
+<<<<<<< HEAD
 
 A personal desktop assistant in the Batcomputer mold: reminders with a color-coded
 deadline timeline, local file search, a Claude-powered chat, and a progress
@@ -77,3 +78,6 @@ otherwise. macOS uses `mdfind`; Linux uses `find` over the same folder set.
   the UI grows meaningfully.
 - Voice commands and the React Native phone client are intentionally out of
   scope for this pass — see the original project brief.
+=======
+Your personalized AI butler that lives on your device, managing, tracking, and assisting you with whatever mission you're on.
+>>>>>>> 586aa84346948bf7286c3e884905740314430e41
