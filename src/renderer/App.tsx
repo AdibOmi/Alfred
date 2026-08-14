@@ -1,31 +1,33 @@
 import { useCallback, useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { TaskPanel } from './ui/TaskPanel';
-import { SearchPanel } from './ui/SearchPanel';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Sidebar, type Section } from './ui/Sidebar';
+import { TopBar } from './ui/TopBar';
 import { ChatPanel } from './ui/ChatPanel';
-import { ProgressPanel } from './ui/ProgressPanel';
-import { Header } from './ui/Header';
-import { api, type Task } from './api';
-
-const panelMotion = {
-  initial: { opacity: 0, y: 24 },
-  animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.4 },
-};
+import { DashboardPage } from './pages/DashboardPage';
+import { CodingLogPage } from './pages/CodingLogPage';
+import { TodosPage } from './pages/TodosPage';
+import { FinancePage } from './pages/FinancePage';
+import { GymPage } from './pages/GymPage';
+import { SettingsPage } from './pages/SettingsPage';
+import { api, type Task, type TaskKind } from './api';
 
 export function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  const [chatOpen, setChatOpen] = useState(false);
 
-  useEffect(() => {
-    api
-      .getTasks()
-      .then(({ tasks: fetched }) => setTasks(fetched))
-      .finally(() => setTasksLoading(false));
+  const refreshTasks = useCallback(async () => {
+    const { tasks: fetched } = await api.getTasks();
+    setTasks(fetched);
   }, []);
 
-  const handleCapture = useCallback(async (text: string) => {
-    const { task } = await api.quickCaptureTask(text);
+  useEffect(() => {
+    refreshTasks().finally(() => setTasksLoading(false));
+  }, [refreshTasks]);
+
+  const handleCapture = useCallback(async (text: string, kind?: TaskKind) => {
+    const { task } = await api.quickCaptureTask(text, kind);
     setTasks((prev) => [...prev, task]);
   }, []);
 
@@ -42,21 +44,45 @@ export function App() {
   return (
     <main className="app-shell">
       <div className="scan-line" aria-hidden="true" />
-      <Header />
-      <div className="grid-shell">
-        <motion.div className="panel" {...panelMotion}>
-          <TaskPanel tasks={tasks} loading={tasksLoading} onCapture={handleCapture} onToggleDone={handleToggleDone} onDelete={handleDelete} />
-        </motion.div>
-        <motion.div className="panel" {...panelMotion} transition={{ ...panelMotion.transition, delay: 0.08 }}>
-          <SearchPanel />
-        </motion.div>
-        <motion.div className="panel panel-large" {...panelMotion} transition={{ ...panelMotion.transition, delay: 0.16 }}>
-          <ChatPanel />
-        </motion.div>
-        <motion.div className="panel panel-large" {...panelMotion} transition={{ ...panelMotion.transition, delay: 0.24 }}>
-          <ProgressPanel />
-        </motion.div>
+      <Sidebar active={activeSection} onSelect={setActiveSection} />
+      <div className="main-column">
+        <TopBar chatOpen={chatOpen} onToggleChat={() => setChatOpen((v) => !v)} onCapture={handleCapture} />
+        <div className="page-content">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeSection}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.18 }}
+            >
+              {activeSection === 'dashboard' && (
+                <DashboardPage
+                  tasks={tasks}
+                  tasksLoading={tasksLoading}
+                  onToggleDone={handleToggleDone}
+                  onDelete={handleDelete}
+                  onNavigate={setActiveSection}
+                />
+              )}
+              {activeSection === 'coding-log' && <CodingLogPage />}
+              {activeSection === 'todos' && (
+                <TodosPage
+                  tasks={tasks}
+                  loading={tasksLoading}
+                  onCapture={handleCapture}
+                  onToggleDone={handleToggleDone}
+                  onDelete={handleDelete}
+                />
+              )}
+              {activeSection === 'finance' && <FinancePage />}
+              {activeSection === 'gym' && <GymPage />}
+              {activeSection === 'settings' && <SettingsPage />}
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
+      <ChatPanel open={chatOpen} onClose={() => setChatOpen(false)} onTaskActivity={refreshTasks} />
     </main>
   );
 }

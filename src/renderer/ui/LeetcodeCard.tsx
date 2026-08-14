@@ -2,20 +2,21 @@ import { BarChart, Bar, ResponsiveContainer, Tooltip, CartesianGrid, XAxis, YAxi
 import type { LeetcodeProgress } from '../api';
 
 interface LeetcodeCardProps {
+  title: string;
   progress: LeetcodeProgress | null;
   loading: boolean;
 }
 
 const DIFFICULTY_COLORS: Record<string, string> = {
-  easy: '#3ddc97',
-  medium: '#fefefe',
-  hard: '#ff5c7a',
+  easy: '#4caf6d',
+  medium: '#f5b942',
+  hard: '#e2484f',
 };
 
-export function LeetcodeCard({ progress, loading }: LeetcodeCardProps) {
+export function LeetcodeCard({ title, progress, loading }: LeetcodeCardProps) {
   return (
     <div className="chart-card">
-      <h3>LeetCode</h3>
+      <h3>{title}</h3>
       {loading && <p className="hint-text">Loading…</p>}
       {!loading && !progress?.configured && (
         <p className="hint-text">Set LEETCODE_USERNAME in your .env to track problem-solving activity here.</p>
@@ -47,10 +48,10 @@ export function LeetcodeCard({ progress, loading }: LeetcodeCardProps) {
               ]}
               margin={{ left: 8, right: 8 }}
             >
-              <CartesianGrid stroke="#14213d" horizontal={false} />
-              <XAxis type="number" tick={{ fill: '#9bb7e7', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis type="category" dataKey="name" tick={{ fill: '#9bb7e7', fontSize: 10 }} axisLine={false} tickLine={false} width={52} />
-              <Tooltip contentStyle={{ background: '#050b18', border: '1px solid #1af4ff' }} itemStyle={{ color: '#fff' }} />
+              <CartesianGrid stroke="#1c1c20" horizontal={false} />
+              <XAxis type="number" tick={{ fill: '#7d7d87', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis type="category" dataKey="name" tick={{ fill: '#7d7d87', fontSize: 10 }} axisLine={false} tickLine={false} width={52} />
+              <Tooltip contentStyle={{ background: '#101013', border: '1px solid #c7cbd1' }} itemStyle={{ color: '#fff' }} />
               <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                 {['easy', 'medium', 'hard'].map((key) => (
                   <Cell key={key} fill={DIFFICULTY_COLORS[key]} />

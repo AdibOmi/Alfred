@@ -9,7 +9,7 @@
     "postinstall": "electron-builder install-app-deps",
     "start": "concurrently -k -s first \"npm:dev:react\" \"npm:dev:electron\"",
     "dev:react": "vite",
-    "dev:electron": "wait-on tcp:5173 && tsx src/electron/main.ts",
+    "dev:electron": "wait-on tcp:5173 && electron -r tsx/cjs src/electron/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.build.json && vite build && electron-builder",
     "lint": "eslint . --ext .ts,.tsx",

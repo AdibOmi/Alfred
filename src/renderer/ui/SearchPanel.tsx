@@ -42,12 +42,6 @@ export function SearchPanel() {
 
   return (
     <section>
-      <div className="panel-header">
-        <div>
-          <p className="eyebrow">File search</p>
-          <h2>Locate assets quickly</h2>
-        </div>
-      </div>
       <div className="search-box">
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name across Desktop, Documents, Downloads…" />
       </div>

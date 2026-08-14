@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, type ChatMessage } from '../api';
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  open: boolean;
+  onClose: () => void;
+  // Alfred can create/complete/delete reminders as a side effect of a chat reply,
+  // so the task list needs a chance to refresh after every round trip.
+  onTaskActivity: () => Promise<void>;
+}
+
+export function ChatPanel({ open, onClose, onTaskActivity }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -37,6 +45,7 @@ export function ChatPanel() {
         ...prev,
         { id: Date.now() + 1, role: 'assistant', content: reply, created_at: new Date().toISOString() },
       ]);
+      await onTaskActivity();
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -48,12 +57,15 @@ export function ChatPanel() {
   };
 
   return (
-    <section>
-      <div className="panel-header">
+    <section className={`chat-overlay ${open ? 'open' : ''}`}>
+      <div className="chat-overlay-header">
         <div>
           <p className="eyebrow">Chat</p>
           <h2>Query Alfred</h2>
         </div>
+        <button className="ghost-button icon-button" onClick={onClose} aria-label="Close chat">
+          ✕
+        </button>
       </div>
       <div className="chat-window" ref={windowRef}>
         {!loaded && <p className="hint-text">Retrieving conversation…</p>}

@@ -8,7 +8,7 @@ import { searchRouter } from './routes/search';
 import { chatRouter } from './routes/chat';
 import { githubRouter } from './routes/github';
 import { leetcodeRouter } from './routes/leetcode';
-import { gymRouter } from './routes/gym';
+import { trackersRouter } from './routes/trackers';
 import { settingsRouter } from './routes/settings';
 import { BACKEND_PORT } from '../shared/constants';
 
@@ -33,7 +33,7 @@ export function startBackend(userDataPath: string): BackendHandle {
   app.use('/api/chat', chatRouter(db, config.anthropicApiKey));
   app.use('/api/progress/github', githubRouter(() => getConfig().githubUsername, () => getConfig().githubToken));
   app.use('/api/progress/leetcode', leetcodeRouter(() => getConfig().leetcodeUsername));
-  app.use('/api/gym', gymRouter(db));
+  app.use('/api/trackers', trackersRouter(db));
   app.use('/api/settings', settingsRouter());
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

@@ -25,7 +25,7 @@ function createWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    backgroundColor: '#020814',
+    backgroundColor: '#08080a',
     show: false,
     icon: isDev ? DEV_APP_ICON_PATH : undefined,
     webPreferences: {
@@ -109,8 +109,20 @@ function startNotificationScheduler(handle: BackendHandle) {
   return setInterval(check, NOTIFICATION_POLL_MS);
 }
 
+function configureAutoLaunch() {
+  // Only register the packaged app (not a dev `tsx` process) to launch at login,
+  // and only on the platforms Electron actually supports this on.
+  if (!app.isPackaged) return;
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return;
+  app.setLoginItemSettings({
+    openAtLogin: true,
+    path: process.execPath,
+  });
+}
+
 app.whenReady().then(() => {
   if (!isDev) applyProductionCsp();
+  configureAutoLaunch();
 
   backend = startBackend(app.getPath('userData'));
   const timer = startNotificationScheduler(backend);

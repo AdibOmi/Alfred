@@ -59,12 +59,12 @@ function mix(base, tint, amount) {
   return base.map((c, i) => Math.round(c + (tint[i] - c) * amount));
 }
 
-// Bat-signal style icon: dark navy rounded square, electric-blue circular spotlight,
+// Bat-signal style icon: near-black rounded square, periwinkle-lavender circular spotlight,
 // dark bat silhouette (body + wings + ears) punched out of the circle.
 function drawAppIcon(size) {
   const rgba = Buffer.alloc(size * size * 4);
-  const navy = [2, 8, 20, 255];
-  const blue = [26, 244, 255, 255];
+  const navy = [6, 6, 10, 255];
+  const blue = [163, 178, 240, 255];
   const cx = size / 2;
   const cy = size / 2;
   const spotlightR = size * 0.4;
@@ -131,10 +131,10 @@ function drawAppIcon(size) {
   return rgba;
 }
 
-// Small tray icon: simple glowing electric-blue dot on a transparent field, legible at 16-32px.
+// Small tray icon: simple glowing periwinkle-lavender dot on a transparent field, legible at 16-32px.
 function drawTrayIcon(size) {
   const rgba = Buffer.alloc(size * size * 4);
-  const blue = [26, 244, 255];
+  const blue = [163, 178, 240];
   const cx = size / 2;
   const cy = size / 2;
   const r = size * 0.34;

@@ -1,8 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { TaskKind } from './taskActions';
 
 export interface ParsedTask {
   title: string;
-  due: string; // ISO 8601
+  due: string | null; // ISO 8601, or null for an undated item
+  kind: TaskKind;
   usedFallback: boolean;
 }
 
@@ -27,10 +29,17 @@ async function parseWithClaude(text: string, apiKey: string): Promise<ParsedTask
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 256,
     system:
-      `You convert a short natural-language reminder into strict JSON: {"title": string, "due": string}. ` +
-      `"due" must be an ISO 8601 datetime. The current moment is ${now.toISOString()} (local reference time). ` +
-      `Resolve relative dates ("tomorrow", "friday", "in 3 days") against that. If no time of day is given, default to 09:00. ` +
-      `"title" is the task stripped of date/time phrasing, kept concise. Respond with ONLY the JSON object, no prose.`,
+      `You convert a short natural-language reminder into strict JSON: ` +
+      `{"title": string, "due": string | null, "kind": "deadline" | "todo"}. ` +
+      `The current moment is ${now.toISOString()} (local reference time). If the text specifies or implies a date/time, ` +
+      `resolve it against that ("tomorrow", "friday", "in 3 days", "21st Aug") into an ISO 8601 datetime for "due", ` +
+      `defaulting to 09:00 when only a date is given. If the text does NOT mention or imply any date or time at all, ` +
+      `set "due" to null — never invent one. "title" is the task stripped of any date/time phrasing, kept concise. ` +
+      `"kind" classifies the task by scope, not by whether it has a date: "todo" is a small, single-sitting, ` +
+      `everyday item (an errand, a quick call, a chore) even if it has a specific time attached; "deadline" is a ` +
+      `larger task, project, assignment, or goal with real effort behind it, whether or not an exact date is given yet ` +
+      `(e.g. "submit thesis draft", "finish reading the DB internals book", "prepare interview answers"). ` +
+      `Respond with ONLY the JSON object, no prose.`,
     messages: [{ role: 'user', content: text }],
   });
 
@@ -41,16 +50,23 @@ async function parseWithClaude(text: string, apiKey: string): Promise<ParsedTask
   if (!jsonMatch) throw new Error('no JSON object in model response');
 
   const parsed = JSON.parse(jsonMatch[0]);
-  if (typeof parsed.title !== 'string' || typeof parsed.due !== 'string') {
+  if (typeof parsed.title !== 'string' || !(parsed.due === null || typeof parsed.due === 'string')) {
     throw new Error('malformed parse result');
   }
-  const due = new Date(parsed.due);
-  if (Number.isNaN(due.getTime())) throw new Error('invalid due date');
 
-  return { title: parsed.title.trim() || text, due: due.toISOString(), usedFallback: false };
+  let due: string | null = null;
+  if (typeof parsed.due === 'string') {
+    const parsedDue = new Date(parsed.due);
+    if (Number.isNaN(parsedDue.getTime())) throw new Error('invalid due date');
+    due = parsedDue.toISOString();
+  }
+
+  const kind: TaskKind = parsed.kind === 'deadline' || parsed.kind === 'todo' ? parsed.kind : due ? 'deadline' : 'todo';
+
+  return { title: parsed.title.trim() || text, due, kind, usedFallback: false };
 }
 
-function parseWithHeuristics(text: string): { title: string; due: string } {
+function parseWithHeuristics(text: string): { title: string; due: string | null; kind: TaskKind } {
   const now = new Date();
   let remaining = text;
   const target = new Date(now);
@@ -93,14 +109,6 @@ function parseWithHeuristics(text: string): { title: string; due: string } {
     const minutes = timeMatch[3] ? Number(timeMatch[3]) : 0;
     target.setHours(hours, minutes, 0, 0);
     remaining = remaining.replace(timeMatch[0], '');
-  } else if (!matchedDay) {
-    // Nothing recognized at all: default to tomorrow morning rather than "right now".
-    target.setDate(target.getDate() + 1);
-  }
-
-  // "today" with a time that's already passed should roll to tomorrow instead of firing immediately.
-  if (saidToday && target.getTime() <= now.getTime()) {
-    target.setDate(target.getDate() + 1);
   }
 
   const title = remaining
@@ -108,5 +116,17 @@ function parseWithHeuristics(text: string): { title: string; due: string } {
     .replace(/\s+/g, ' ')
     .trim();
 
-  return { title: title || text, due: target.toISOString() };
+  // Nothing date/time-related recognized at all: leave it a plain to-do, no fabricated date.
+  if (!matchedDay && !timeMatch) {
+    return { title: title || text, due: null, kind: 'todo' };
+  }
+
+  // "today" with a time that's already passed should roll to tomorrow instead of firing immediately.
+  if (saidToday && target.getTime() <= now.getTime()) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  // No model available to judge scope from wording alone, so this fallback keeps the
+  // old convention: a resolved date reads as a deadline, dateless stays a to-do.
+  return { title: title || text, due: target.toISOString(), kind: 'deadline' };
 }

@@ -1,10 +1,13 @@
 import { BACKEND_ORIGIN } from '../shared/constants';
 
+export type TaskKind = 'deadline' | 'todo';
+
 export interface Task {
   id: string;
   title: string;
   notes: string | null;
-  due: string;
+  due: string | null;
+  kind: TaskKind;
   status: 'active' | 'done';
   created_at: string;
   notified_at: string | null;
@@ -44,20 +47,29 @@ export interface LeetcodeProgress {
   error?: string;
 }
 
-export interface GymLog {
+export interface Tracker {
   id: string;
+  type: 'github' | 'leetcode' | 'manual';
+  name: string;
+  unit: string | null;
+  position: number;
+  enabled: boolean;
+  created_at: string;
+}
+
+export interface TrackerLog {
+  id: string;
+  tracker_id: string;
   date: string;
-  exercise: string;
-  sets: number;
-  reps: number;
-  weight: number | null;
+  label: string | null;
+  value: number;
   notes: string | null;
   created_at: string;
 }
 
-export interface GymSummary {
+export interface TrackerSummary {
   streak: number;
-  weeklyVolume: { date: string; volume: number }[];
+  series: { date: string; value: number }[];
   totalEntries: number;
 }
 
@@ -85,14 +97,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   getTasks: () => apiFetch<{ tasks: Task[] }>('/api/tasks'),
-  createTask: (payload: { title: string; due: string; notes?: string }) =>
+  createTask: (payload: { title: string; due?: string | null; notes?: string; kind?: TaskKind }) =>
     apiFetch<{ task: Task }>('/api/tasks', { method: 'POST', body: JSON.stringify(payload) }),
-  quickCaptureTask: (text: string) =>
+  quickCaptureTask: (text: string, kind?: TaskKind) =>
     apiFetch<{ task: Task; usedFallbackParser: boolean }>('/api/tasks/quick', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, kind }),
     }),
-  updateTask: (id: string, payload: Partial<Pick<Task, 'title' | 'due' | 'notes' | 'status'>>) =>
+  updateTask: (id: string, payload: Partial<Pick<Task, 'title' | 'due' | 'notes' | 'status' | 'kind'>>) =>
     apiFetch<{ task: Task }>(`/api/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteTask: (id: string) => apiFetch<void>(`/api/tasks/${id}`, { method: 'DELETE' }),
 
@@ -107,11 +119,20 @@ export const api = {
   getGithubProgress: () => apiFetch<GithubProgress>('/api/progress/github'),
   getLeetcodeProgress: () => apiFetch<LeetcodeProgress>('/api/progress/leetcode'),
 
-  getGymLogs: () => apiFetch<{ logs: GymLog[] }>('/api/gym'),
-  getGymSummary: () => apiFetch<GymSummary>('/api/gym/summary'),
-  createGymLog: (payload: { date: string; exercise: string; sets: number; reps: number; weight?: number; notes?: string }) =>
-    apiFetch<{ log: GymLog }>('/api/gym', { method: 'POST', body: JSON.stringify(payload) }),
-  deleteGymLog: (id: string) => apiFetch<void>(`/api/gym/${id}`, { method: 'DELETE' }),
+  getTrackers: () => apiFetch<{ trackers: Tracker[] }>('/api/trackers'),
+  createTracker: (payload: { type: Tracker['type']; name?: string; unit?: string }) =>
+    apiFetch<{ tracker: Tracker }>('/api/trackers', { method: 'POST', body: JSON.stringify(payload) }),
+  updateTracker: (id: string, payload: Partial<Pick<Tracker, 'name' | 'unit' | 'enabled'>>) =>
+    apiFetch<{ tracker: Tracker }>(`/api/trackers/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  moveTracker: (id: string, direction: 'up' | 'down') =>
+    apiFetch<{ trackers: Tracker[] }>(`/api/trackers/${id}/move`, { method: 'POST', body: JSON.stringify({ direction }) }),
+  deleteTracker: (id: string) => apiFetch<void>(`/api/trackers/${id}`, { method: 'DELETE' }),
+
+  getTrackerLogs: (id: string) => apiFetch<{ logs: TrackerLog[] }>(`/api/trackers/${id}/logs`),
+  getTrackerSummary: (id: string) => apiFetch<TrackerSummary>(`/api/trackers/${id}/summary`),
+  createTrackerLog: (id: string, payload: { date: string; label?: string; value: number; notes?: string }) =>
+    apiFetch<{ log: TrackerLog }>(`/api/trackers/${id}/logs`, { method: 'POST', body: JSON.stringify(payload) }),
+  deleteTrackerLog: (id: string, logId: string) => apiFetch<void>(`/api/trackers/${id}/logs/${logId}`, { method: 'DELETE' }),
 
   getSettings: () => apiFetch<Settings>('/api/settings'),
 };

@@ -2,14 +2,15 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, CartesianGrid, XAxis, YA
 import type { GithubProgress } from '../api';
 
 interface GithubCardProps {
+  title: string;
   progress: GithubProgress | null;
   loading: boolean;
 }
 
-export function GithubCard({ progress, loading }: GithubCardProps) {
+export function GithubCard({ title, progress, loading }: GithubCardProps) {
   return (
     <div className="chart-card">
-      <h3>GitHub</h3>
+      <h3>{title}</h3>
       {loading && <p className="hint-text">Loading…</p>}
       {!loading && !progress?.configured && (
         <p className="hint-text">Set GITHUB_USERNAME in your .env to track commit activity here.</p>
@@ -35,15 +36,15 @@ export function GithubCard({ progress, loading }: GithubCardProps) {
             <AreaChart data={progress.dailyCommits ?? []}>
               <defs>
                 <linearGradient id="commitGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#1af4ff" stopOpacity={0.8} />
-                  <stop offset="95%" stopColor="#1af4ff" stopOpacity={0.06} />
+                  <stop offset="5%" stopColor="#c7cbd1" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#c7cbd1" stopOpacity={0.06} />
                 </linearGradient>
               </defs>
-              <CartesianGrid stroke="#14213d" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#9bb7e7', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => v.slice(5)} />
-              <YAxis tick={{ fill: '#9bb7e7', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
-              <Tooltip contentStyle={{ background: '#050b18', border: '1px solid #1af4ff' }} itemStyle={{ color: '#fff' }} />
-              <Area type="monotone" dataKey="count" stroke="#1af4ff" fillOpacity={1} fill="url(#commitGradient)" strokeWidth={2} />
+              <CartesianGrid stroke="#1c1c20" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#7d7d87', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => v.slice(5)} />
+              <YAxis tick={{ fill: '#7d7d87', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={24} />
+              <Tooltip contentStyle={{ background: '#101013', border: '1px solid #c7cbd1' }} itemStyle={{ color: '#fff' }} />
+              <Area type="monotone" dataKey="count" stroke="#c7cbd1" fillOpacity={1} fill="url(#commitGradient)" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
         </>
