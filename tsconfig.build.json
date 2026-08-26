@@ -8,5 +8,6 @@
     "noEmit": false,
     "declaration": false
   },
-  "include": ["src/electron/**/*.ts", "src/backend/**/*.ts"]
+  "include": ["src/electron/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["**/*.test.ts"]
 }

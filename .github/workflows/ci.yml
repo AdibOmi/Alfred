@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm run lint
+
+      - run: npm run test
+
+      # Compiles the backend/electron TS and bundles the renderer, but stops short of
+      # electron-builder's platform-specific packaging step (installers/codesigning are
+      # a separate, deliberately manual release process for now).
+      - run: npx tsc -p tsconfig.build.json
+      - run: npx vite build

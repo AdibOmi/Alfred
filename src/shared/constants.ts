@@ -1,2 +1,3 @@
-export const BACKEND_PORT = 4789;
-export const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
+// Size (in px) of the collapsed floating icon window. Shared between the main
+// process (window bounds) and the renderer (icon CSS) so they can't drift apart.
+export const ICON_SIZE = 56;

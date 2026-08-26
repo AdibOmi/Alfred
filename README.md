@@ -1,83 +1,96 @@
 # Alfred
-<<<<<<< HEAD
 
-A personal desktop assistant in the Batcomputer mold: reminders with a color-coded
-deadline timeline, local file search, a Claude-powered chat, and a progress
-dashboard pulling from GitHub, LeetCode, and a manual gym log.
+A tiny floating on-screen assistant. Alfred lives as one small icon in the corner of your screen. Click it,
+ask a question about whatever you're looking at — "how do I delete a blank page in Word?" — and Alfred takes
+a single screenshot, sends it with your question to a vision-capable Claude model, and answers with clear,
+numbered steps.
+
+That's the whole product.
+
+## What Alfred does NOT do
+
+This is a deliberate privacy-by-design pivot away from an earlier, much bigger version of this app that did
+reminders, filesystem search, and progress dashboards backed by a local SQLite database. None of that
+survives, on purpose:
+
+- **No continuous or background screen capture.** A screenshot is taken exactly once, synchronously, only
+  when you press submit on a question — never on a timer, never while idle.
+- **No screenshots on disk, ever.** The captured image lives in memory for the single request/response
+  round trip to Claude and is discarded the moment that call returns. It is never written to a file or a
+  database.
+- **No chat history persisted.** The conversation in the panel is in-memory React state — closing or
+  restarting the app clears it. There is nothing to persist by design.
+- **No analytics, telemetry, or crash reporting that phones home.** Nothing about your usage leaves your
+  machine except the one screenshot + question you explicitly send to Claude for an answer.
+- **No SQLite, no local database at all.** The only persistent state is your API key (encrypted via the OS
+  keychain) and two small preferences (auto-launch, icon position), stored in a flat local config file.
 
 ## Stack
 
-- **Shell:** Electron
-- **UI:** React + TypeScript, Framer Motion, Recharts
-- **Backend:** Express + better-sqlite3, running inside the Electron main process
-  and exposed on `http://127.0.0.1:4789` — a real local HTTP API, not just IPC, so
-  a future phone client can talk to the same interface.
-- **Brain:** Claude API (`@anthropic-ai/sdk`) for chat and natural-language
-  reminder parsing, with a deterministic fallback parser when no API key is set.
+- **Shell:** Electron — a single small, frameless, always-on-top floating window plus a tray icon
+- **UI:** React + TypeScript
+- **Brain:** Claude API (`@anthropic-ai/sdk`), vision-capable model, one request per question
+- **Config:** `electron-store` + Electron's `safeStorage` (OS keychain/DPAPI) for the API key — never
+  plaintext on disk
+
+There is no backend server and no IPC-over-HTTP — the renderer talks to the main process directly over
+`contextBridge`/IPC, and the main process makes the Claude API call itself.
 
 ## Setup
 
 ```bash
 npm install
-cp .env.example .env   # fill in whichever keys you have — all optional
 npm start
 ```
 
-`npm start` runs the Vite dev server and Electron concurrently. Every panel
-degrades gracefully with no `.env` at all: Chat explains it needs a key, and the
-GitHub/LeetCode cards show a one-line "not configured" hint instead of failing.
+On first launch, click the floating icon and paste in an Anthropic API key (get one at
+console.anthropic.com) — it's encrypted and stored locally via your OS's secure credential store, so you
+won't need to re-enter it on relaunch.
+
+## Using it
+
+1. Click the floating icon.
+2. Type your question about whatever's on screen.
+3. Alfred captures the screen once, asks Claude, and shows the answer.
+4. Press Escape, or click away, to collapse the panel back down to just the icon.
+5. Drag the icon anywhere on screen; its position is remembered.
+
+## Settings
+
+Click the gear icon inside the panel for:
+
+- API key entry/update (stored via `safeStorage`, never in plaintext)
+- Auto-launch on login toggle
+- Reset icon position (back to the bottom-right corner)
 
 ## Scripts
 
 | Script | What it does |
 |---|---|
-| `npm start` | Dev mode: Vite dev server + Electron, hot-reloading the renderer |
+| `npm start` | Dev mode: Vite dev server + Electron, hot-reloading the UI |
 | `npm run typecheck` | `tsc --noEmit` across the whole project |
-| `npm run build` | Compiles main/backend, builds the renderer, packages via electron-builder |
+| `npm run test` | Runs the Vitest suite |
+| `npm run build` | Compiles the main process, builds the UI, packages via electron-builder |
 | `npm run lint` | ESLint over `.ts`/`.tsx` |
 
 ## Project layout
 
 ```
 src/
-  electron/   main process: window, tray, notification scheduler, preload bridge
-  backend/    Express API: tasks, search, chat, github, leetcode, gym, settings
-  renderer/   React UI (panels: reminders, search, chat, progress)
-  shared/     constants/helpers used by both backend and renderer (e.g. the
-              backend port, local-date formatting)
+  electron/   main process: floating window + tray, IPC handlers, screenshot capture,
+              the Claude vision call, and encrypted config storage
+  renderer/   the icon + chat panel + settings UI (React)
+  shared/     the one constant (icon size) shared between main and renderer
 ```
 
-The renderer talks to the backend over plain `fetch()` against
-`http://127.0.0.1:4789`, not Electron IPC — that's deliberate, so the same
-backend can later serve a React Native client without duplicating logic.
+## Permissions
 
-## Configuration reference
-
-All of these live in `.env` (project root for `npm run dev`, or
-`<userData>/.env` for a packaged build — see `app.getPath('userData')`).
-
-- `ANTHROPIC_API_KEY` — chat + natural-language reminder capture
-- `GITHUB_USERNAME` — required for the GitHub card; unauthenticated REST is used
-  if that's all you set (rate-limited, last ~7 days of public events)
-- `GITHUB_TOKEN` — optional; switches the GitHub card to GraphQL for a proper
-  30-day contribution calendar
-- `LEETCODE_USERNAME` — required for the LeetCode card (uses LeetCode's public
-  GraphQL endpoint, no auth needed)
-
-## File search
-
-On Windows, Alfred uses the [Everything](https://www.voidtools.com/) CLI
-(`es.exe`) if it's on your `PATH` for instant whole-system search, and falls
-back to a scoped PowerShell search of Desktop/Documents/Downloads/Pictures
-otherwise. macOS uses `mdfind`; Linux uses `find` over the same folder set.
+On macOS, Alfred needs Screen Recording permission to capture the screen (System Settings → Privacy &
+Security → Screen Recording). If it isn't granted, Alfred detects this and shows you exactly where to enable
+it instead of failing silently.
 
 ## Known follow-ups
 
-- The renderer bundle is a single ~700KB chunk (mostly Recharts + Framer
-  Motion). Not a problem for a local Electron app, but worth code-splitting if
-  the UI grows meaningfully.
-- Voice commands and the React Native phone client are intentionally out of
-  scope for this pass — see the original project brief.
-=======
-Your personalized AI butler that lives on your device, managing, tracking, and assisting you with whatever mission you're on.
->>>>>>> 586aa84346948bf7286c3e884905740314430e41
+- No code signing on the packaged installer — Windows SmartScreen / macOS Gatekeeper will warn on first run
+  for anyone besides the machine that built it.
+- No auto-update wiring (`electron-updater` isn't set up) — updates are manual for now.
