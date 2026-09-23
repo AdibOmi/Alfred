@@ -83,8 +83,9 @@ export function SettingsPanel({ firstRun, autoLaunch, onSaved, onBack }: Setting
       )}
 
       <p className="hint-text privacy-note">
-        Screenshots are taken only when you ask a question, are sent straight to Claude, and are never saved to
-        disk or kept in memory afterward.
+        Alfred takes a screenshot only when answering a question actually needs one, sends it straight to Claude,
+        and never writes it to disk. Your tasks and reminders stay in a local file on this machine; your API key
+        is encrypted with your OS keychain.
       </p>
     </div>
   );

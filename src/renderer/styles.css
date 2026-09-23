@@ -1,11 +1,14 @@
 :root {
   --bg: #101013;
   --bg-elevated: #18181c;
+  --bg-hover: #212127;
   --border: #2a2a30;
   --text: #e8e8ec;
   --text-dim: #8a8a92;
   --accent: #c7cbd1;
   --error: #e2484f;
+  --warn: #e0a33e;
+  --ok: #5bbf7a;
 }
 
 * {
@@ -31,7 +34,10 @@ body {
   height: 100%;
 }
 
+/* ---------- Collapsed floating icon ---------- */
+
 .floating-icon {
+  position: relative;
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -51,6 +57,20 @@ body {
 .floating-icon:hover {
   border-color: var(--accent);
 }
+
+/* Dot on the floating icon when a reminder has come due and is still open. */
+.icon-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--warn);
+  border: 2px solid var(--bg-elevated);
+}
+
+/* ---------- Expanded panel shell ---------- */
 
 .panel-shell {
   width: 100%;
@@ -92,6 +112,7 @@ body {
   cursor: pointer;
   padding: 4px 6px;
   border-radius: 6px;
+  line-height: 1;
 }
 
 .icon-button:hover {
@@ -99,22 +120,94 @@ body {
   color: var(--text);
 }
 
+/* ---------- Tabs ---------- */
+
+.view-tabs {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab-active {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.tab-count {
+  background: var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  font-size: 10px;
+  padding: 1px 6px;
+  font-weight: 600;
+}
+
+.tab-count-alert {
+  background: var(--warn);
+  color: #101013;
+}
+
+/* Both panels fill whatever the tab strip leaves; min-height:0 is what lets
+   their inner scroll areas actually scroll instead of stretching the panel. */
 .chat-panel,
+.tasks-panel,
 .settings-panel {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   gap: 10px;
   overflow: hidden;
 }
 
+/* ---------- Chat ---------- */
+
 .chat-window {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding-right: 2px;
+}
+
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-examples {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.7;
 }
 
 .chat-entry {
@@ -128,9 +221,13 @@ body {
 .chat-entry p {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -145,10 +242,21 @@ body {
   color: var(--error);
 }
 
+.screen-tag {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
 .chat-error-actions {
   display: flex;
   gap: 8px;
   margin-top: 4px;
+  flex-wrap: wrap;
 }
 
 .chat-input-row {
@@ -159,7 +267,179 @@ body {
 
 .chat-input-row input {
   flex: 1;
+  min-width: 0;
 }
+
+/* ---------- Tasks ---------- */
+
+.tasks-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 999px;
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--text);
+}
+
+.chip-active {
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chip-count {
+  font-weight: 600;
+}
+
+.clear-done {
+  margin-left: auto;
+}
+
+.tasks-list-window {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 7px 6px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.task-row:hover {
+  background: var(--bg-elevated);
+}
+
+.task-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.task-main input[type='checkbox'] {
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--ok);
+}
+
+.task-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.task-title {
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.task-row.done .task-title {
+  color: var(--text-dim);
+  text-decoration: line-through;
+}
+
+.task-notes {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.task-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  flex-shrink: 0;
+}
+
+.task-row:hover .task-actions,
+.task-row:focus-within .task-actions {
+  opacity: 1;
+}
+
+.due-badge {
+  align-self: flex-start;
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.due-overdue {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.due-today {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.task-reminder-editor {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 0 2px 26px;
+  flex-wrap: wrap;
+}
+
+.task-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.task-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.task-add-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------- Form controls ---------- */
 
 input {
   background: var(--bg-elevated);
@@ -168,11 +448,22 @@ input {
   color: var(--text);
   padding: 8px 10px;
   font-size: 13px;
+  font-family: inherit;
 }
 
 input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+input[type='datetime-local'] {
+  padding: 6px 8px;
+  font-size: 12px;
+  color-scheme: dark;
+}
+
+input[type='checkbox'] {
+  padding: 0;
 }
 
 .action-button {
@@ -184,6 +475,7 @@ input:focus {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .action-button:disabled {
@@ -199,10 +491,17 @@ input:focus {
   padding: 6px 10px;
   font-size: 12px;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .ghost-button:hover {
   border-color: var(--accent);
+}
+
+.action-button.small,
+.ghost-button.small {
+  padding: 5px 10px;
+  font-size: 11px;
 }
 
 .hint-text {
@@ -215,6 +514,8 @@ input:focus {
 .hint-error {
   color: var(--error);
 }
+
+/* ---------- Settings ---------- */
 
 .settings-form {
   display: flex;
@@ -242,4 +543,17 @@ input:focus {
   margin-top: auto;
   border-top: 1px solid var(--border);
   padding-top: 10px;
+}
+
+/* ---------- Scrollbars ---------- */
+
+.chat-window::-webkit-scrollbar,
+.tasks-list-window::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-window::-webkit-scrollbar-thumb,
+.tasks-list-window::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
 }

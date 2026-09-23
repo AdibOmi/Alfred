@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { BrowserWindow, Menu, Tray, app, nativeImage, screen } from 'electron';
 import isDev from 'electron-is-dev';
@@ -5,13 +6,41 @@ import { getIconPosition, setIconPosition } from './store';
 import { ICON_SIZE } from '../shared/constants';
 import { defaultIconPosition as computeDefaultIconPosition, expandedBounds as computeExpandedBounds } from './geometry';
 
-const PANEL_WIDTH = 360;
-const PANEL_HEIGHT = 480;
+const PANEL_WIDTH = 380;
+const PANEL_HEIGHT = 560;
 const SCREEN_MARGIN = 24;
 
 const TRAY_ICON_PATH = app.isPackaged
   ? path.join(process.resourcesPath, 'tray-icon.png')
   : path.join(__dirname, '..', '..', 'resources', 'tray-icon.png');
+
+/**
+ * Locates the compiled preload script.
+ *
+ * The preload always has to be real JavaScript: it runs in its own sandboxed
+ * context, outside the dev-time TypeScript loader that `npm start` applies to
+ * the main process. So in development, where main.ts is executed straight out
+ * of src/electron, the preload still has to come from the build output.
+ *
+ * Getting this wrong fails silently and spectacularly — Electron drops a
+ * missing preload without a word, the renderer never receives window.alfred,
+ * and the first bridge call throws, leaving a blank panel with no error. Hence
+ * the explicit throw.
+ */
+function resolvePreloadPath(): string {
+  const candidates = [
+    path.join(__dirname, 'preload.js'), // packaged, or running the compiled main
+    path.join(__dirname, '..', '..', 'dist', 'electron', 'preload.js'), // dev, from src
+  ];
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!found) {
+    throw new Error(
+      'Could not find the compiled preload script. Run `npm run build:main` to compile it. Looked in: ' +
+        candidates.join(', '),
+    );
+  }
+  return found;
+}
 
 function defaultIconPosition(): { x: number; y: number } {
   return computeDefaultIconPosition(screen.getPrimaryDisplay().workArea, ICON_SIZE, SCREEN_MARGIN);
@@ -27,6 +56,7 @@ export interface AlfredWindow {
   tray: Tray;
   expand: () => void;
   collapse: () => void;
+  toggle: () => void;
   resetPosition: () => void;
 }
 
@@ -47,7 +77,7 @@ export function createFloatingWindow(): AlfredWindow {
     skipTaskbar: true,
     show: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -96,6 +126,23 @@ export function createFloatingWindow(): AlfredWindow {
     window.webContents.send('alfred:expanded-changed', false);
   }
 
+  // What the tray item and the global shortcut both call: summon Alfred with
+  // the panel already open, or put it away if it is already open.
+  function toggle() {
+    if (expanded) {
+      collapse();
+      return;
+    }
+    if (!window.isVisible()) window.show();
+    expand();
+  }
+
+  function showView(view: 'chat' | 'tasks') {
+    if (!window.isVisible()) window.show();
+    expand();
+    window.webContents.send('alfred:show-view', view);
+  }
+
   function resetPosition() {
     const position = defaultIconPosition();
     setIconPosition(position);
@@ -107,8 +154,11 @@ export function createFloatingWindow(): AlfredWindow {
   const tray = new Tray(nativeImage.createFromPath(TRAY_ICON_PATH));
   tray.setToolTip('Alfred');
   const menu = Menu.buildFromTemplate([
+    { label: 'Ask Alfred', click: () => showView('chat') },
+    { label: 'Tasks & reminders', click: () => showView('tasks') },
+    { type: 'separator' },
     {
-      label: 'Show/Hide Alfred',
+      label: 'Hide floating icon',
       click: () => (window.isVisible() ? window.hide() : window.show()),
     },
     { type: 'separator' },
@@ -118,7 +168,7 @@ export function createFloatingWindow(): AlfredWindow {
     },
   ]);
   tray.setContextMenu(menu);
-  tray.on('click', () => (window.isVisible() ? window.hide() : window.show()));
+  tray.on('click', () => toggle());
 
-  return { window, tray, expand, collapse, resetPosition };
+  return { window, tray, expand, collapse, toggle, resetPosition };
 }

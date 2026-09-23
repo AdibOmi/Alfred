@@ -12,17 +12,20 @@
     "postinstall": "electron-builder install-app-deps",
     "start": "concurrently -k -s first \"npm:dev:react\" \"npm:dev:electron\"",
     "dev:react": "vite",
-    "dev:electron": "wait-on tcp:5173 && electron -r tsx/cjs src/electron/main.ts",
+    "dev:electron": "wait-on tcp:5173 && npm run build:main && electron -r tsx/cjs src/electron/main.ts",
+    "build:main": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json && vite build && electron-builder",
+    "build": "npm run build:main && vite build && electron-builder",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write ."
   },
   "build": {
     "appId": "dev.alfred.assistant",
     "productName": "Alfred",
-    "files": ["dist/**/*"],
+    "files": [
+      "dist/**/*"
+    ],
     "directories": {
       "buildResources": "build"
     },
@@ -43,7 +46,7 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
+    "@anthropic-ai/sdk": "^0.127.0",
     "electron-is-dev": "^2.0.0",
     "electron-store": "^8.2.0",
     "react": "^19.0.0",
