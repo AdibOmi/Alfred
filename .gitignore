@@ -9,3 +9,12 @@ yarn-debug.log*
 yarn-error.log*
 .env
 .superpowers/
+
+# Backend
+backend/.venv/
+__pycache__/
+.pytest_cache/
+*.db
+*.db-shm
+*.db-wal
+backend/reports/

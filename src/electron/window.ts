@@ -4,7 +4,12 @@ import { BrowserWindow, Menu, Tray, app, nativeImage, screen } from 'electron';
 import isDev from 'electron-is-dev';
 import { getIconPosition, setIconPosition } from './store';
 import { ICON_SIZE } from '../shared/constants';
-import { defaultIconPosition as computeDefaultIconPosition, expandedBounds as computeExpandedBounds } from './geometry';
+import {
+  defaultIconPosition as computeDefaultIconPosition,
+  expandedBounds as computeExpandedBounds,
+  type Rect,
+} from './geometry';
+import { panelSpotAvoiding } from '../shared/guide';
 
 const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
@@ -46,9 +51,10 @@ function defaultIconPosition(): { x: number; y: number } {
   return computeDefaultIconPosition(screen.getPrimaryDisplay().workArea, ICON_SIZE, SCREEN_MARGIN);
 }
 
-function expandedBounds(iconPosition: { x: number; y: number }) {
+function expandedBounds(iconPosition: { x: number; y: number }, avoid: Rect | null = null) {
   const { workArea } = screen.getDisplayNearestPoint(iconPosition);
-  return computeExpandedBounds(iconPosition, ICON_SIZE, PANEL_WIDTH, PANEL_HEIGHT, workArea);
+  const bounds = computeExpandedBounds(iconPosition, ICON_SIZE, PANEL_WIDTH, PANEL_HEIGHT, workArea);
+  return panelSpotAvoiding(bounds, workArea, avoid);
 }
 
 export interface AlfredWindow {
@@ -58,7 +64,22 @@ export interface AlfredWindow {
   collapse: () => void;
   toggle: () => void;
   resetPosition: () => void;
+  /**
+   * Keeps the panel open while a guided step is on screen (the user has to click into
+   * their own app, which would otherwise blur and collapse it), parked clear of the target.
+   */
+  pin: (avoid: Rect | null) => void;
+  unpin: () => void;
+  showView: (view: AlfredView) => void;
+  /** Puts the panel back in the top-most band, above the pointer overlay. */
+  keepOnTop: () => void;
+  /** Manual dragging of the collapsed icon (an OS drag region would swallow its clicks). */
+  beginDrag: () => void;
+  dragBy: (dx: number, dy: number) => void;
+  endDrag: () => void;
 }
+
+export type AlfredView = 'chat' | 'tasks' | 'history';
 
 export function createFloatingWindow(): AlfredWindow {
   const startPosition = getIconPosition() ?? defaultIconPosition();
@@ -84,7 +105,17 @@ export function createFloatingWindow(): AlfredWindow {
     },
   });
 
-  window.setAlwaysOnTop(true, 'floating');
+  // On Windows, showing another always-on-top window (Alfred's pointer overlay) quietly
+  // drops this one out of the top-most band, and the next click into the user's app
+  // then buries the panel. Sharing the overlay's level, one notch above it, and
+  // re-asserting whenever the overlay appears keeps Alfred in front.
+  function keepOnTop() {
+    if (window.isDestroyed()) return;
+    window.setAlwaysOnTop(true, 'screen-saver', 1);
+    window.moveTop();
+  }
+
+  keepOnTop();
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   const url = isDev ? 'http://localhost:5173' : `file://${path.join(__dirname, '../renderer/index.html')}`;
@@ -92,6 +123,8 @@ export function createFloatingWindow(): AlfredWindow {
   window.once('ready-to-show', () => window.show());
 
   let expanded = false;
+  let pinned = false;
+  let avoid: Rect | null = null;
 
   // Only the collapsed (icon-only) size is ever a real "icon position" — skip
   // persisting bounds captured mid-expand/collapse or while the panel is open.
@@ -102,7 +135,8 @@ export function createFloatingWindow(): AlfredWindow {
   });
 
   window.on('blur', () => {
-    if (expanded) collapse();
+    if (expanded && !pinned) collapse();
+    else keepOnTop();
   });
 
   function expand() {
@@ -110,8 +144,9 @@ export function createFloatingWindow(): AlfredWindow {
     expanded = true;
     const iconBounds = window.getBounds();
     window.setResizable(true);
-    window.setBounds(expandedBounds(iconBounds), true);
+    window.setBounds(expandedBounds(iconBounds, pinned ? avoid : null), true);
     window.setResizable(false);
+    keepOnTop();
     window.focus();
     window.webContents.send('alfred:expanded-changed', true);
   }
@@ -137,10 +172,47 @@ export function createFloatingWindow(): AlfredWindow {
     expand();
   }
 
-  function showView(view: 'chat' | 'tasks') {
+  function pin(target: Rect | null) {
+    pinned = true;
+    avoid = target;
+    if (expanded) window.setBounds(expandedBounds(getIconPosition() ?? defaultIconPosition(), avoid), true);
+    keepOnTop();
+  }
+
+  function unpin() {
+    if (!pinned) return;
+    pinned = false;
+    avoid = null;
+    if (expanded) window.setBounds(expandedBounds(getIconPosition() ?? defaultIconPosition()), true);
+  }
+
+  function showView(view: AlfredView) {
     if (!window.isVisible()) window.show();
     expand();
     window.webContents.send('alfred:show-view', view);
+  }
+
+  // The icon used to be a CSS drag region, but on Windows a drag region eats mouse
+  // clicks, so the icon could be moved but never opened. The renderer now reports
+  // pointer movement and decides click vs drag itself; this just moves the window.
+  let dragOrigin: { x: number; y: number } | null = null;
+
+  function beginDrag() {
+    if (expanded) return;
+    const bounds = window.getBounds();
+    dragOrigin = { x: bounds.x, y: bounds.y };
+  }
+
+  function dragBy(dx: number, dy: number) {
+    if (!dragOrigin || expanded) return;
+    window.setBounds({ x: Math.round(dragOrigin.x + dx), y: Math.round(dragOrigin.y + dy), width: ICON_SIZE, height: ICON_SIZE });
+  }
+
+  function endDrag() {
+    if (!dragOrigin) return;
+    dragOrigin = null;
+    const bounds = window.getBounds();
+    setIconPosition({ x: bounds.x, y: bounds.y });
   }
 
   function resetPosition() {
@@ -156,6 +228,7 @@ export function createFloatingWindow(): AlfredWindow {
   const menu = Menu.buildFromTemplate([
     { label: 'Ask Alfred', click: () => showView('chat') },
     { label: 'Tasks & reminders', click: () => showView('tasks') },
+    { label: 'History & reports', click: () => showView('history') },
     { type: 'separator' },
     {
       label: 'Hide floating icon',
@@ -170,5 +243,5 @@ export function createFloatingWindow(): AlfredWindow {
   tray.setContextMenu(menu);
   tray.on('click', () => toggle());
 
-  return { window, tray, expand, collapse, toggle, resetPosition };
+  return { window, tray, expand, collapse, toggle, resetPosition, pin, unpin, showView, keepOnTop, beginDrag, dragBy, endDrag };
 }

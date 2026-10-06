@@ -2,7 +2,7 @@
   "name": "alfred",
   "productName": "Alfred",
   "version": "0.1.0",
-  "description": "A floating on-screen assistant: screenshot what you're looking at, ask a question, get step-by-step help.",
+  "description": "Alfred, your personal software butler: summon it, say where you are stuck, and it points at the next thing to click. Plus tasks and reminders.",
   "author": "AdibOmi",
   "license": "UNLICENSED",
   "private": true,
@@ -18,7 +18,8 @@
     "test": "vitest run",
     "build": "npm run build:main && vite build && electron-builder",
     "lint": "eslint . --ext .ts,.tsx",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "selftest": "npm run build:main && concurrently -k -s first \"npm:dev:react\" \"wait-on tcp:5173 && electron -r tsx/cjs src/electron/main.ts --selftest\""
   },
   "build": {
     "appId": "dev.alfred.assistant",
@@ -46,7 +47,6 @@
     }
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.127.0",
     "electron-is-dev": "^2.0.0",
     "electron-store": "^8.2.0",
     "react": "^19.0.0",

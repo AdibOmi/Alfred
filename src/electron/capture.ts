@@ -1,4 +1,4 @@
-import { desktopCapturer, screen, systemPreferences } from 'electron';
+import { desktopCapturer, screen, systemPreferences, type BrowserWindow, type Display } from 'electron';
 import { thumbnailSizeFor } from './geometry';
 
 export type ScreenPermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unsupported';
@@ -13,30 +13,50 @@ export function checkScreenPermission(): ScreenPermissionStatus {
   return 'not-determined';
 }
 
-const MAX_EDGE = 1568;
+// Big enough for the vision model to read menu labels; the server downscales further.
+const MAX_EDGE = 1600;
 
-export interface CapturedScreenshot {
-  base64: string;
-  mediaType: 'image/png';
+export interface CapturedScreen {
+  /** data:image/jpeg;base64,… */
+  dataUrl: string;
+  display: Display;
 }
 
-// Captures the display under the current cursor (a reasonable proxy for "what
-// the user is looking at" — Electron has no cross-platform "active window"
-// API without extra native modules) as an in-memory PNG. Never touches disk.
-export async function captureActiveScreen(): Promise<CapturedScreenshot> {
-  const cursorPoint = screen.getCursorScreenPoint();
-  const targetDisplay = screen.getDisplayNearestPoint(cursorPoint);
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const sources = await desktopCapturer.getSources({
-    types: ['screen'],
-    thumbnailSize: thumbnailSizeFor(targetDisplay.size, MAX_EDGE),
-  });
+/**
+ * Captures the display under the cursor (a reasonable proxy for "what the user is
+ * looking at" — Electron has no cross-platform "active window" API without extra
+ * native modules) as an in-memory JPEG. Never touches disk.
+ *
+ * Alfred's own windows must not end up in the picture, or the model mostly sees
+ * Alfred. They are excluded from capture for that instant (content protection:
+ * WDA_EXCLUDEFROMCAPTURE on Windows, NSWindowSharingNone on macOS) instead of being
+ * hidden or faded, so nothing on screen flickers, moves, blurs or collapses.
+ * Protection is switched off again afterwards so screen recordings and screen
+ * sharing still show Alfred.
+ */
+export async function captureActiveScreen(exclude: BrowserWindow[] = []): Promise<CapturedScreen> {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const windows = exclude.filter((win) => !win.isDestroyed());
 
-  const source =
-    sources.find((s) => s.display_id === String(targetDisplay.id)) ?? sources[0];
-  if (!source || source.thumbnail.isEmpty()) {
-    throw new Error('Could not capture the screen.');
+  for (const win of windows) win.setContentProtection(true);
+  try {
+    // The compositor applies the new affinity on its next frame.
+    await wait(60);
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: thumbnailSizeFor(
+        { width: display.size.width * display.scaleFactor, height: display.size.height * display.scaleFactor },
+        MAX_EDGE,
+      ),
+    });
+    const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
+    if (!source || source.thumbnail.isEmpty()) {
+      throw new Error('Could not capture the screen.');
+    }
+    return { dataUrl: `data:image/jpeg;base64,${source.thumbnail.toJPEG(82).toString('base64')}`, display };
+  } finally {
+    for (const win of windows) if (!win.isDestroyed()) win.setContentProtection(false);
   }
-
-  return { base64: source.thumbnail.toPNG().toString('base64'), mediaType: 'image/png' };
 }

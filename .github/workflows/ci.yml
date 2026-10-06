@@ -30,3 +30,22 @@ jobs:
       # a separate, deliberately manual release process for now).
       - run: npx tsc -p tsconfig.build.json
       - run: npx vite build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      # Runs against the offline mock LLM, so no API key is needed in CI.
+      - run: python -m pytest -q

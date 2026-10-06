@@ -1,131 +1,163 @@
 # Alfred
 
-A small floating assistant that lives in the corner of your screen. Click the icon and you get one panel
-with two things in it:
+A small floating butler that lives in the corner of your screen. When you get stuck in an app you don't know,
+press **Ctrl/Cmd + Shift + A**, say what you're trying to do, and Alfred **points at the next thing to click**,
+one step at a time, until you're done. He also keeps your to-dos and reminders.
 
-- **Ask** — a question about whatever you're looking at. "How do I delete a blank page in Word?" Alfred
-  takes a single screenshot, sends it to Claude, and answers with numbered steps that name the actual menus
-  and buttons on your screen.
-- **Tasks** — to-dos and reminders. Add them in the panel, or just say so in the chat: *"remind me to submit
-  the form at 4pm"*. When a reminder comes due you get a native OS notification.
+| Sign in | A guided step | The pointer | Tasks | History & reports |
+| --- | --- | --- | --- | --- |
+| ![](docs/screenshots/01-sign-in.png) | ![](docs/screenshots/02-guided-step.png) | ![](docs/screenshots/03-overlay.png) | ![](docs/screenshots/04-tasks.png) | ![](docs/screenshots/05-history.png) |
 
-Both live behind the same text box, because Claude decides what the question needs.
+## What it does
+
+- **Ask:** "How do I make a pie chart from this table?" Alfred takes one screenshot, works out where you are,
+  and draws a gold ghost cursor that glides to the right button and rings it, with the instruction beside it.
+  Press **Done, next step** and he takes a fresh look and points at the next one. **I can't find it** explains
+  the same step again. On Windows he can also glide your real mouse pointer there. He never clicks for you.
+- **Tasks:** to-dos and reminders. Add them in the panel, or just say *"remind me to submit the form at 4pm"*.
+  When a reminder comes due you get a native notification, or an email if Alfred wasn't running.
+- **History & reports:** every task Alfred walked you through is saved with its steps. Each Monday morning you
+  get a PDF "cheat sheet" of your week by email, so next time you can do it alone.
 
 ## How a question is answered
 
-Every message runs a short tool-use loop in the Electron main process. Claude is given five tools —
-`look_at_screen`, `create_task`, `update_task`, `complete_task`, `delete_task` — and picks.
+```
+ ┌──────────── Desktop (Electron + React) ─────────────┐         ┌────────────────── Backend (FastAPI) ───────────────────┐
+ │ Floating icon, tray, Ctrl+Shift+A                   │         │ /auth      accounts, PBKDF2 hashes, JWT                │
+ │ Ask box ─────────── message + recent turns ─────────┼───────► │ /chat      Gemini tool loop: create/update/complete/   │
+ │                                                     │ ◄───────┼────────── delete tasks, or look_at_screen(goal)        │
+ │ look_at_screen? → one screenshot ── goal + image ───┼───────► │ /sessions  Gemini vision → ONE step + bounding box     │
+ │ Overlay: ghost cursor + ring  ◄──── step + box_2d ──┼─────────│            cache first (perceptual hash of the screen) │
+ │ "Done, next step" → fresh screenshot → repeat       │         │ /tasks     to-dos and reminders per user               │
+ │ Reminder sweep every 30 s → OS notification         │         │ /reports   weekly PDF, email                           │
+ └─────────────────────────────────────────────────────┘         │ APScheduler: weekly report, missed-reminder email,     │
+                                                                 │ cache purge, stale-session cleanup                     │
+                                                                 │ SQLite: users, tasks, sessions, steps, messages, cache │
+                                                                 └────────────────────────────────────────────────────────┘
+```
 
-That design decides the privacy model for free. **No screenshot is taken up front.** "Add buy milk to my
-list" never touches the screen at all, because Claude has no reason to call `look_at_screen`. When it does
-call it, the PNG is captured in memory, attached to that one request, and discarded when the loop returns.
+Every message goes to `/chat`, where Gemini gets five tools — `look_at_screen`, `create_task`, `update_task`,
+`complete_task`, `delete_task` — and picks. Task tools run on the server against the database. `look_at_screen`
+ends the loop and hands back to the desktop, which then takes the screenshot.
 
-The current task list is injected into the system prompt on every turn rather than hidden behind a
-`list_tasks` tool. It's small, it's what most task questions are about, and having the ids up front means
-*"mark the dentist one done"* resolves in a single round trip instead of two.
+That design decides the privacy model for free. **No screenshot is taken up front.** "Add buy milk to my list"
+never touches the screen at all.
+
+When a screenshot is needed, Alfred's own windows are made invisible for that instant so the model sees your app
+and not Alfred. The vision model is asked for exactly **one** next step and the bounding box of the element to
+click, normalised to 0–1000 so it maps onto any screen size or DPI. Asking for one step at a time, on a fresh
+screenshot each time, is what lets Alfred keep up when a menu opens or a dialog pops up.
+
+The current task list goes into the system prompt on every turn rather than sitting behind a `list_tasks` tool.
+It's small, it's what most task questions are about, and having the ids up front means *"mark the dentist one
+done"* resolves in a single round trip.
 
 ## What Alfred does not do
 
-- **No continuous or background screen capture.** A screenshot happens only inside `look_at_screen`, only
-  during a request you triggered, never on a timer and never while idle.
-- **No screenshots on disk, ever.** The image exists for one request/response round trip and is never
-  written to a file, a database, or back to the renderer.
-- **No chat history persisted.** The conversation is in-memory React state; the last few turns travel with
-  each request so follow-ups work, and closing the app clears everything.
-- **No analytics or telemetry.** Nothing leaves your machine except the questions, and the screenshots, you
-  explicitly send to Claude.
-- **No database.** Tasks are a flat JSON file in Electron's per-user data directory. Your API key is
-  encrypted through the OS keychain.
+- **No continuous or background screen capture.** A screenshot happens only when a question needs one, or when
+  you press *Done, next step*. Never on a timer, never while idle.
+- **No screenshots on disk, ever.** The image is downscaled, sent to the model, and dropped. The server keeps only
+  a 64-character perceptual hash, used as a cache key.
+- **No clicking for you.** Alfred points; you click. That's how you learn, and it can't click the wrong thing.
+- **No paid APIs.** Gemini's free tier (no credit card), SQLite, and Gmail SMTP are all free.
 
-## Stack
+## Program concepts (FlyRank capstone: 7 of 7)
 
-- **Shell:** Electron — one small frameless always-on-top window, plus a tray icon
-- **UI:** React + TypeScript
-- **Brain:** Claude API (`@anthropic-ai/sdk`), `claude-opus-5` running a tool-use loop at `effort: "low"`
-  so the panel stays responsive
-- **Storage:** `electron-store` for tasks and preferences, Electron `safeStorage` (Keychain / DPAPI) for
-  the API key
-
-There's no backend server and no IPC-over-HTTP. The renderer talks to the main process over
-`contextBridge`/IPC, and the main process makes the Claude call itself, so the API key never reaches the
-renderer.
+| Concept | Where |
+| --- | --- |
+| API endpoints | `backend/app/main.py`: 22 REST routes, OpenAPI docs at `/docs`, every error as `{"error": ...}` |
+| Database | `backend/app/db.py`: SQLite, 8 tables (users, tasks, help_sessions, steps, messages, llm_cache, reports, job_runs) |
+| Authentication | `backend/app/auth.py`: sign-up/login, PBKDF2-SHA256, HS256 JWT bearer tokens, per-user isolation. Desktop keeps the token encrypted with the OS keychain (`src/electron/store.ts`) |
+| Background / cron jobs | `backend/app/jobs.py`: weekly reports (cron, Mon 08:00), missed-reminder emails (5 min), cache purge (hourly), stale-session cleanup (30 min). FastAPI `BackgroundTasks` for "email me my report". Desktop reminder sweep (`src/electron/reminders.ts`) |
+| Reporting (PDF + email) | `backend/app/reports.py`: weekly PDF with totals, apps, a step-by-step cheat sheet and open to-dos, sent over SMTP |
+| Caching | `backend/app/cache.py`: in-memory LRU in front of a SQLite table with TTL. Key = perceptual hash of the screen + goal + progress, so the same question on the same screen is instant |
+| LLM integration | `backend/app/agent.py` (Gemini function-calling loop) and `backend/app/llm.py` (vision grounding with JSON output, validation, model fallback, offline mock) |
 
 ## Setup
+
+You need Python 3.11+ and Node 20+.
+
+### 1. Backend
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env          # macOS/Linux: cp .env.example .env
+python run.py
+```
+
+Put a free Gemini key from <https://aistudio.google.com/apikey> in `backend/.env` as `GEMINI_API_KEY`, and set
+`SECRET_KEY` to a long random string. Without a key the server runs in **demo mode**: a rule-based chat and a
+fixed three-step script, so you can try the whole flow offline. Email is optional (see `.env.example`).
+
+API docs: <http://127.0.0.1:8000/docs>
+
+### 2. Desktop app
 
 ```bash
 npm install
 npm start
 ```
 
-On first launch, click the floating icon and paste in an Anthropic API key (get one at
-console.anthropic.com). It's encrypted via your OS credential store, so you won't re-enter it on relaunch.
+Click the floating icon (or press **Ctrl/Cmd + Shift + A**) and create an account. The server URL defaults to
+`http://127.0.0.1:8000` and can be changed on the sign-in screen or in Settings.
 
 `npm start` compiles the main process before launching Electron. That step is not optional: the preload
-script runs in its own sandboxed context, outside the TypeScript loader that handles `main.ts` in dev, so
-it has to exist as real JavaScript in `dist/` before the window opens. A missing preload is dropped by
-Electron without a word and shows up as a blank panel, so `createFloatingWindow` now throws a named error
-instead. Editing `preload.ts` means restarting `npm start`; the React UI still hot-reloads normally.
+scripts run in their own sandboxed context, outside the TypeScript loader that handles `main.ts` in dev, so they
+have to exist as real JavaScript in `dist/` before the window opens.
 
-> If Electron exits immediately or behaves like plain Node, check that `ELECTRON_RUN_AS_NODE` isn't set in
-> your shell — it forces the Electron binary into Node mode and the app will never start.
+> If Electron exits immediately or behaves like plain Node, check that `ELECTRON_RUN_AS_NODE` isn't set in your
+> shell (VS Code's terminal sets it). It forces the Electron binary into Node mode and the app will never start.
 
 ## Using it
 
 1. Click the floating icon, or press **Ctrl/Cmd + Shift + A** from anywhere.
-2. **Ask** for screen help, or hand Alfred a task in the same box.
-3. **Tasks** lists everything open, with overdue reminders flagged in red. Tick to complete, or use the
-   clock button to set or change a reminder time.
-4. Press Escape, or click away, to collapse back down to the icon.
-5. Drag the icon anywhere; its position is remembered. A dot appears on it when a reminder is overdue.
+2. **Ask** where you're stuck. Follow the gold pointer, then press **Done, next step**. Type a follow-up any time
+   ("I don't see that button") and Alfred answers about the same step.
+3. **Tasks** lists everything open, with overdue reminders flagged. Tick to complete, or use the clock button.
+4. **History** shows past sessions with their steps, this week's PDF, and *Email it to me*.
+5. Press Escape, or click away, to collapse back to the icon. While a step is on screen the panel stays open and
+   moves out of the way if it would cover the target.
 
-Reminders fire as native notifications. Clicking one opens Alfred on the Tasks view. A reminder that came
-due while Alfred was closed still fires the next time it runs, rather than being silently skipped.
+## Tests
 
-## Settings
-
-The gear icon inside the panel has API key entry, a launch-at-login toggle, and a reset for the icon
-position.
-
-## Scripts
-
-| Script | What it does |
-|---|---|
-| `npm start` | Dev mode: Vite dev server + Electron, hot-reloading the UI |
-| `npm run typecheck` | `tsc --noEmit` across the whole project |
-| `npm run test` | Runs the Vitest suite |
-| `npm run build` | Compiles the main process, builds the UI, packages via electron-builder |
-| `npm run lint` | ESLint over `.ts`/`.tsx` |
-
-## Project layout
-
-```
-src/
-  electron/   main process
-    agent.ts        the Claude tool-use loop — the core of the app
-    capture.ts      one-shot in-memory screenshot + macOS permission check
-    taskStore.ts    task persistence
-    reminders.ts    due-reminder sweep and OS notifications
-    window.ts       floating window, tray, expand/collapse geometry
-    store.ts        encrypted API key and preferences
-  renderer/   the icon, chat panel, tasks panel, and settings UI (React)
-  shared/     pure logic used by both sides — task rules and date formatting,
-              kept Electron-free so it can be unit-tested directly
+```bash
+npm test                    # 41 unit tests: tasks, reminders, formatting, geometry, guided-step mapping
+npm run typecheck && npm run lint
+cd backend && python -m pytest -q   # 30 API tests: auth, tasks, chat tool loop, sessions, cache, PDF, jobs
+npm run selftest            # end-to-end: drives the real panel against a running backend, saves screenshots
 ```
 
-The unit tests cover the parts worth protecting: window geometry, task state transitions, which reminders
-are owed at a given moment, and the local-time formatting that a naive `toISOString()` would get wrong.
+## API
 
-## Permissions
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/health` | Status and active LLM provider |
+| POST | `/auth/signup`, `/auth/login` | Create account / log in, returns a JWT |
+| GET, PATCH | `/auth/me` | Profile and weekly-report opt-in |
+| POST | `/chat` | The Ask box: runs task tools, or returns `look_at_screen` |
+| POST | `/sessions` | Goal + screenshot → step 1 |
+| POST | `/sessions/{id}/next` | New screenshot (+ optional follow-up) → next step |
+| GET | `/sessions`, `/sessions/{id}` | History, steps and conversation |
+| PATCH, DELETE | `/sessions/{id}` | Mark solved/abandoned, delete |
+| GET, POST | `/tasks` | List / create to-dos |
+| PATCH, DELETE | `/tasks/{id}` | Edit, complete, re-time, mark reminded / delete |
+| POST | `/tasks/clear-completed` | Remove finished to-dos |
+| GET | `/stats` | Totals and top apps |
+| GET | `/reports/weekly.pdf` | This week's PDF |
+| POST | `/reports/email` | Build and email the PDF in the background |
+| GET | `/jobs` | Job schedule, recent runs, cache stats |
+| POST | `/jobs/{name}/run` | Run a job now (admins in `ADMIN_EMAILS`) |
 
-On macOS, Alfred needs Screen Recording permission (System Settings → Privacy & Security → Screen
-Recording). If it isn't granted, Alfred says so and offers a shortcut to the right settings pane instead of
-failing silently. Tasks and reminders work fine without it.
+## Stack
 
-## Known follow-ups
+- **Desktop:** Electron, React + TypeScript, Vite. One frameless always-on-top panel, a click-through overlay
+  window for the pointer, a tray icon. `electron-store` for preferences, `safeStorage` (Keychain / DPAPI) for the
+  session token.
+- **Backend:** FastAPI, SQLite, APScheduler, fpdf2, Pillow, PyJWT.
+- **AI:** Google Gemini (free tier) for both the chat tool loop and screenshot grounding.
 
-- No code signing on the packaged installer — Windows SmartScreen and macOS Gatekeeper will warn on first
-  run for anyone other than the machine that built it.
-- No auto-update wiring (`electron-updater` isn't set up); updates are manual.
-- Reminders are swept every 30 seconds rather than scheduled per task. That's deliberate — a long
-  `setTimeout` doesn't survive system sleep — but it does mean a reminder can fire up to 30 seconds late.
-- Recurring reminders ("every weekday at 9") aren't supported; each reminder fires once.
+The renderer never talks to the network: it reaches the main process over `contextBridge`/IPC, and the main
+process calls the backend, so the session token never reaches the page.
