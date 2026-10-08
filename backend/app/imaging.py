@@ -40,7 +40,7 @@ def difference_hash(image: Image.Image, size: int = 16) -> str:
     return f"{int(''.join(bits), 2):0{size * size // 4}x}"
 
 
-def decode_screenshot(data: str) -> Screenshot:
+def decode_screenshot(data: str, max_width: int | None = None) -> Screenshot:
     if "," in data and data.lstrip().startswith("data:"):
         data = data.split(",", 1)[1]
     try:
@@ -51,9 +51,10 @@ def decode_screenshot(data: str) -> Screenshot:
         raise InvalidScreenshot("screenshot must be a base64-encoded PNG or JPEG") from error
 
     image = image.convert("RGB")
-    if image.width > config.SCREENSHOT_MAX_WIDTH:
-        ratio = config.SCREENSHOT_MAX_WIDTH / image.width
-        image = image.resize((config.SCREENSHOT_MAX_WIDTH, round(image.height * ratio)), Image.Resampling.LANCZOS)
+    limit = max_width or config.SCREENSHOT_MAX_WIDTH
+    if image.width > limit:
+        ratio = limit / image.width
+        image = image.resize((limit, round(image.height * ratio)), Image.Resampling.BILINEAR)
 
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=82)

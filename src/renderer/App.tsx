@@ -5,6 +5,7 @@ import { SettingsPanel } from './ui/SettingsPanel';
 import { HistoryPanel } from './ui/HistoryPanel';
 import { AuthPanel } from './ui/AuthPanel';
 import { openTaskCount, overdueCount, type Task } from '../shared/tasks';
+import { EMBLEM_PATHS, EMBLEM_VIEWBOX } from '../shared/emblem';
 import type { AppState, AssistResponse } from '../electron/preload';
 
 type View = 'chat' | 'tasks' | 'history' | 'settings';
@@ -128,7 +129,11 @@ export function App() {
           aria-label="Open Alfred"
           tabIndex={0}
         >
-          <span>◆</span>
+          <svg className="emblem" viewBox={`0 0 ${EMBLEM_VIEWBOX} ${EMBLEM_VIEWBOX}`} aria-hidden="true">
+            {EMBLEM_PATHS.map((d) => (
+              <path key={d} d={d} />
+            ))}
+          </svg>
           {(pendingOverdue > 0 || guide) && (
             <span className={`icon-badge ${guide ? 'icon-badge-guide' : ''}`} aria-label={guide ? 'Step in progress' : `${pendingOverdue} overdue`} />
           )}

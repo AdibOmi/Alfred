@@ -1,6 +1,7 @@
 // Client for the Alfred backend. Lives in the main process so the session token never
 // reaches the renderer. Every failure becomes an ApiError whose message is safe to show.
 import { getApiBase, getToken, type AlfredUser } from './store';
+import { whenBackendReady } from './backend';
 import type { AssistResponse } from '../shared/guide';
 import type { ChatTurn } from '../shared/history';
 
@@ -16,6 +17,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, route: string, body?: unknown, raw = false): Promise<T> {
+  // A local backend may still be booting when the first request goes out.
+  await whenBackendReady();
   const base = getApiBase();
   const headers: Record<string, string> = {};
   if (body !== undefined) headers['Content-Type'] = 'application/json';

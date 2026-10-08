@@ -1,5 +1,6 @@
 import { desktopCapturer, screen, systemPreferences, type BrowserWindow, type Display } from 'electron';
 import { thumbnailSizeFor } from './geometry';
+import { grabScreen } from './winScreen';
 
 export type ScreenPermissionStatus = 'granted' | 'denied' | 'not-determined' | 'unsupported';
 
@@ -13,12 +14,17 @@ export function checkScreenPermission(): ScreenPermissionStatus {
   return 'not-determined';
 }
 
-// Big enough for the vision model to read menu labels; the server downscales further.
-const MAX_EDGE = 1600;
+// Native resolution on ordinary screens: small menu text that survives at full size gets dropped
+// by OCR once it is scaled down. The server shrinks the image again before the model sees it.
+const MAX_EDGE = 2560;
 
 export interface CapturedScreen {
   /** data:image/jpeg;base64,… */
   dataUrl: string;
+  /** The same JPEG, bare base64. */
+  base64: string;
+  /** Pixel size of the JPEG, which is not the display size: it is scaled to MAX_EDGE. */
+  size: { width: number; height: number };
   display: Display;
 }
 
@@ -44,6 +50,19 @@ export async function captureActiveScreen(exclude: BrowserWindow[] = []): Promis
   try {
     // The compositor applies the new affinity on its next frame.
     await wait(60);
+
+    // Windows: a direct GDI grab, an order of magnitude faster than desktopCapturer.
+    const physical = process.platform === 'win32' ? screen.dipToScreenRect(null, display.bounds) : null;
+    const grabbed = physical && (await grabScreen(physical, MAX_EDGE));
+    if (grabbed) {
+      return {
+        dataUrl: `data:image/jpeg;base64,${grabbed.base64}`,
+        base64: grabbed.base64,
+        size: { width: grabbed.width, height: grabbed.height },
+        display,
+      };
+    }
+
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: thumbnailSizeFor(
@@ -55,7 +74,8 @@ export async function captureActiveScreen(exclude: BrowserWindow[] = []): Promis
     if (!source || source.thumbnail.isEmpty()) {
       throw new Error('Could not capture the screen.');
     }
-    return { dataUrl: `data:image/jpeg;base64,${source.thumbnail.toJPEG(82).toString('base64')}`, display };
+    const base64 = source.thumbnail.toJPEG(82).toString('base64');
+    return { dataUrl: `data:image/jpeg;base64,${base64}`, base64, size: source.thumbnail.getSize(), display };
   } finally {
     for (const win of windows) if (!win.isDestroyed()) win.setContentProtection(false);
   }

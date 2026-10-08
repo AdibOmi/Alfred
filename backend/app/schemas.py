@@ -65,6 +65,9 @@ class AssistResponse(BaseModel):
     done: bool
     from_cache: bool
     provider: str
+    # False when the model places boxes loosely: the desktop should only point once it has
+    # confirmed the target on screen (by finding target_label's text), never on the box alone.
+    trusted_boxes: bool = True
 
 
 class MessageOut(BaseModel):

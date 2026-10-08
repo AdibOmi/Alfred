@@ -12,6 +12,7 @@ yarn-error.log*
 
 # Backend
 backend/.venv/
+backend/.secret_key
 __pycache__/
 .pytest_cache/
 *.db

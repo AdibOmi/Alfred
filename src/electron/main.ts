@@ -11,6 +11,8 @@ import { ApiError, api, localTimeWithOffset } from './api';
 import { createOverlay } from './overlay';
 import { createGuide, type Guide } from './guide';
 import { cursorMoveSupported, disposeCursor, warmUpCursor } from './cursor';
+import { disposeWinScreen, warmUpWinScreen } from './winScreen';
+import { ensureBackend, stopBackend } from './backend';
 import { runSelftest } from './selftest';
 import { startReminderScheduler, type ReminderScheduler } from './reminders';
 import {
@@ -25,6 +27,7 @@ import {
 } from './taskStore';
 import type { TaskDraft, TaskPatch } from '../shared/tasks';
 import { trimHistory, type ChatTurn } from '../shared/history';
+import { isClearlyAboutScreen } from '../shared/route';
 import {
   clearSession,
   getApiBase,
@@ -128,6 +131,7 @@ function registerIpcHandlers(window: AlfredWindow) {
   handle('alfred:setApiBase', async (url: string) => {
     if (!/^https?:\/\/\S+$/.test(url.trim())) throw new Error('The server URL must start with http:// or https://');
     setApiBase(url);
+    void ensureBackend(getApiBase());
     return appState();
   });
   handle('alfred:setAutoLaunch', async (enabled: boolean) => {
@@ -176,16 +180,33 @@ function registerIpcHandlers(window: AlfredWindow) {
 
   // ---- the Ask box
   handle('alfred:ask', async (question: string, history: ChatTurn[] = []) => {
+    // While the server decides what the message needs, capture the screen and start reading it
+    // here, so a screen question doesn't then wait for a screenshot and OCR. The capture stays in
+    // this process's memory and is dropped untouched when the message turns out not to need it:
+    // it only ever leaves the machine for a question about the screen.
+    const permission = checkScreenPermission();
+    const prepared =
+      permission === 'denied' || permission === 'not-determined' ? null : guide!.prepare().catch(() => null);
+
+    const asked = Date.now();
+
+    // "How do I…" can only be about the screen, so skip asking the model what it needs.
+    if (prepared && isClearlyAboutScreen(question)) {
+      const step = await guide!.start(question, await prepared);
+      console.log(`[alfred] answered in ${Date.now() - asked} ms (straight to the screen)`);
+      return { reply: step.reply, usedScreen: true, guide: step };
+    }
+
     const res = await api.chat(question, trimHistory(history, MAX_HISTORY_TURNS), localTimeWithOffset());
+    const routed = Date.now();
     if (res.changed_tasks) {
-      await refreshTasks();
-      scheduler?.sweep();
+      void refreshTasks().then(() => scheduler?.sweep());
     }
     if (!res.look_at_screen) return { reply: res.reply, usedScreen: false, guide: null };
 
-    // A screen question: take one screenshot now and start a guided session.
     requireScreenPermission();
-    const step = await guide!.start(res.look_at_screen.goal);
+    const step = await guide!.start(res.look_at_screen.goal, await prepared);
+    console.log(`[alfred] answered in ${Date.now() - asked} ms (routing ${routed - asked} ms, step ${Date.now() - routed} ms)`);
     return { reply: step.reply || res.reply, usedScreen: true, guide: step };
   });
 
@@ -233,6 +254,11 @@ if (!gotTheLock) {
 
     if (!isDev) applyProductionCsp();
 
+    // Both run in the background: the window shows immediately, and the first request waits for
+    // the backend only if it is still booting.
+    void ensureBackend(getApiBase());
+    warmUpWinScreen();
+
     alfred = createFloatingWindow();
     const overlay = createOverlay();
     guide = createGuide(alfred, overlay, getMoveRealCursor);
@@ -267,6 +293,8 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   scheduler?.stop();
   disposeCursor();
+  disposeWinScreen();
+  stopBackend();
 });
 
 app.on('window-all-closed', () => {

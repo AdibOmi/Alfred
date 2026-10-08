@@ -41,21 +41,31 @@ body {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  background: radial-gradient(circle at 50% 38%, #24262d 0%, #0b0c0f 70%);
+  border: 1px solid rgba(200, 204, 212, 0.35);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  color: var(--accent);
   cursor: pointer;
   user-select: none;
   touch-action: none;
+  transition: border-color 120ms ease, transform 120ms ease;
 }
 
 .floating-icon:hover {
-  border-color: var(--accent);
+  border-color: rgba(244, 245, 247, 0.8);
+}
+
+.floating-icon:active {
+  transform: scale(0.94);
+}
+
+.floating-icon .emblem {
+  width: 44px;
+  height: 44px;
+  fill: #f4f5f7;
+  pointer-events: none;
 }
 
 /* Dot on the floating icon when a reminder has come due and is still open. */
@@ -561,7 +571,7 @@ input[type='checkbox'] {
 /* ---------- Guided steps ---------- */
 
 :root {
-  --guide: #e2b04a; /* the overlay's pointer colour, so the card and the ring read as one thing */
+  --guide: #f4f5f7; /* the overlay's ring colour, so the card and the ring read as one thing */
 }
 
 .step-card {
@@ -732,4 +742,15 @@ input[type='checkbox'] {
 
 .ghost-button.danger {
   color: var(--error);
+}
+
+/* A soft pulse on "Thinking…" so a short wait reads as work, not a stall. */
+.thinking {
+  animation: thinking 1.2s ease-in-out infinite;
+}
+
+@keyframes thinking {
+  50% {
+    opacity: 0.45;
+  }
 }

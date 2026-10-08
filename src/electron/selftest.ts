@@ -9,6 +9,25 @@ import type { Overlay } from './overlay';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// What the guided session looks at: a stand-in spreadsheet filling the display, so the test is
+// repeatable and never sends whatever happens to be on the developer's real screen to the model.
+const STAGE_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+  body { margin: 0; font: 14px "Segoe UI", sans-serif; background: #fff; color: #222; }
+  .title { background: #217346; color: #fff; padding: 6px 14px; font-size: 13px; }
+  .tabs { display: flex; gap: 26px; background: #217346; color: #fff; padding: 6px 18px 8px; font-size: 15px; }
+  .ribbon { display: flex; gap: 18px; background: #f3f3f3; border-bottom: 1px solid #d0d0d0; padding: 14px 18px; height: 70px; }
+  .ribbon div { border: 1px solid #ccc; background: #fff; padding: 10px 14px; height: 24px; }
+  table { border-collapse: collapse; margin: 18px; }
+  td, th { border: 1px solid #d4d4d4; padding: 6px 18px; text-align: left; min-width: 90px; }
+  th { background: #f3f3f3; }
+</style></head><body>
+  <div class="title">Book1 - Excel</div>
+  <div class="tabs"><span>File</span><span>Home</span><span>Insert</span><span>Page Layout</span><span>Formulas</span><span>Data</span><span>Review</span><span>View</span></div>
+  <div class="ribbon"><div>Paste</div><div>Cut</div><div>Copy</div><div>Bold</div><div>Merge &amp; Center</div><div>Conditional Formatting</div></div>
+  <table><tr><th>Month</th><th>Sales</th></tr><tr><td>January</td><td>120</td></tr><tr><td>February</td><td>95</td></tr>
+  <tr><td>March</td><td>140</td></tr><tr><td>April</td><td>80</td></tr></table>
+</body></html>`;
+
 // Runs inside the page: React ignores plain `.value =`, so go through the native setter.
 const HELPERS = `
   window.__q = (sel) => document.querySelector(sel);
@@ -81,6 +100,8 @@ export async function runSelftest(alfred: AlfredWindow, overlay: Overlay) {
   try {
     if (page.isLoading()) await new Promise<void>((resolve) => page.once('did-finish-load', () => resolve()));
     await js(HELPERS);
+    await wait(500);
+    fs.writeFileSync(path.join(out, '00-icon.png'), (await alfred.window.capturePage()).toPNG());
     await open();
     await waitFor("__btn('Create account')", 'sign-in panel');
     await shoot('01-sign-in.png');
@@ -106,10 +127,21 @@ export async function runSelftest(alfred: AlfredWindow, overlay: Overlay) {
     await failIfError();
     log('reminder created through chat');
 
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const stage = new BrowserWindow({ ...display.bounds, show: false, frame: false, skipTaskbar: true });
+    await stage.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(STAGE_HTML)}`);
+    // Above ordinary apps (an editor that grabs focus would otherwise cover it), below Alfred.
+    stage.setAlwaysOnTop(true, 'floating');
+    stage.show();
+    await wait(500);
+    alfred.keepOnTop();
+    await open();
+
+    const started = Date.now();
     await ask('How do I make a pie chart from my table?');
     await waitFor("__q('.step-card') || __q('.chat-entry.error')", 'first guided step');
     await failIfError();
-    log('step 1:', await js("__q('.step-text').textContent"));
+    log(`step 1 in ${Date.now() - started} ms:`, await js("__q('.step-text').textContent"));
     await wait(1800); // let the ghost cursor glide in
     await shoot('02-guided-step.png');
     await assertOnScreen('.step-actions .action-button', 'after step 1');
@@ -119,6 +151,7 @@ export async function runSelftest(alfred: AlfredWindow, overlay: Overlay) {
     // window right over the panel: if Alfred drops out of the top-most band, it shows.
     const otherApp = new BrowserWindow({ ...alfred.window.getBounds(), show: false, frame: false, skipTaskbar: true });
     await otherApp.loadURL('data:text/html,<body style="margin:0;background:%23ff0000"></body>');
+    otherApp.setAlwaysOnTop(true, 'floating');
     otherApp.show();
     otherApp.focus();
     await wait(800);
@@ -130,6 +163,7 @@ export async function runSelftest(alfred: AlfredWindow, overlay: Overlay) {
     otherApp.focus();
     await assertOnScreen('.step-actions .action-button', 'after step 2');
     otherApp.destroy();
+    stage.destroy();
 
     await js("__btn('✓ It worked').click(); true");
     await waitFor("!__q('.step-card')", 'session to finish');

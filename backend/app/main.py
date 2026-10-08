@@ -137,7 +137,7 @@ def update_me(body: UserUpdate, user: CurrentUser) -> UserOut:
 
 def _decode(screenshot: str) -> Screenshot:
     try:
-        return decode_screenshot(screenshot)
+        return decode_screenshot(screenshot, getattr(llm.get_provider(), "max_width", None))
     except InvalidScreenshot as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error)) from error
 
@@ -194,6 +194,7 @@ def _response(session_id: int, answer: dict, step: StepOut, from_cache: bool) ->
         done=answer["done"],
         from_cache=from_cache,
         provider=llm.get_provider().name,
+        trusted_boxes=getattr(llm.get_provider(), "trusted_boxes", True),
     )
 
 

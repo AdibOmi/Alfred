@@ -3,9 +3,14 @@
 The model gets five tools. Task tools run right here against the database. look_at_screen
 ends the loop and tells the desktop app to take a screenshot and start a guided session,
 so a message like "add milk to my list" never touches the screen at all.
+
+Speed matters more than anything here, so the loop takes one model call in the common case:
+once every task tool has succeeded, the confirmation is written from the tool results instead
+of asking the model to phrase it. Only a failed tool call goes back to the model to sort out.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -98,6 +103,38 @@ def _local(iso: str | None, tz: timezone) -> str:
     return datetime.fromisoformat(iso).astimezone(tz).strftime("%a %d %b %Y %H:%M") if iso else ""
 
 
+def friendly_when(iso: str, tz: timezone, now: datetime) -> str:
+    """'today at 5:00 PM', 'tomorrow at 9:30 AM', 'Fri 10 Oct at 5:00 PM'."""
+    when = datetime.fromisoformat(iso).astimezone(tz)
+    clock = when.strftime("%I:%M %p").lstrip("0")
+    days = (when.date() - now.astimezone(tz).date()).days
+    if days == 0:
+        return f"today at {clock}"
+    if days == 1:
+        return f"tomorrow at {clock}"
+    if days == -1:
+        return f"yesterday at {clock}"
+    return f"{when.strftime('%a')} {when.day} {when.strftime('%b')} at {clock}"
+
+
+TOOL_SPECS = TOOLS[0]["functionDeclarations"]
+
+
+def _openai_schema(schema: dict) -> dict:
+    """Gemini's upper-case schema types, rewritten for an OpenAI-style API."""
+    out = {key: value for key, value in schema.items() if key not in {"type", "properties"}}
+    out["type"] = schema["type"].lower()
+    if "properties" in schema:
+        out["properties"] = {name: _openai_schema(prop) for name, prop in schema["properties"].items()}
+    return out
+
+
+OPENAI_TOOLS = [
+    {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": _openai_schema(t["parameters"])}}
+    for t in TOOL_SPECS
+]
+
+
 def system_prompt(task_list: list[dict], now: datetime, tz: timezone) -> str:
     def line(t: dict) -> str:
         parts = [f"- id={t['id']} | {t['title']}"]
@@ -146,20 +183,32 @@ def _contents(history: list[dict], message: str) -> list[dict]:
     return contents
 
 
-def _run_tool(name: str, args: dict, user_id: int, tz: timezone, outcome: dict) -> str:
-    """Executes one task tool and returns the text the model sees as the result."""
+def _run_tool(name: str, args: dict, user_id: int, tz: timezone, now: datetime, outcome: dict) -> tuple[str, str | None]:
+    """Executes one task tool.
+
+    Returns (what the model sees as the result, what the user is told). The second is None when
+    the call failed, which is the signal to hand the result back to the model.
+    """
     def local_to_utc(value: str | None) -> str | None:
         return tasks.parse_time(value, assume_tz=tz)
+
+    def reminder(task: dict) -> str:
+        return f", reminder set for {friendly_when(task['remindAt'], tz, now)}" if task["remindAt"] else ""
 
     with get_db() as conn:
         if name == "create_task":
             title = str(args.get("title") or "").strip()
             if not title:
-                return "Error: a task needs a title."
+                return "Error: a task needs a title.", None
             task = tasks.create_task(conn, user_id, title, args.get("notes"), local_to_utc(args.get("remind_at")))
             outcome["changed_tasks"] = True
             when = f" with a reminder at {_local(task['remindAt'], tz)}" if task["remindAt"] else " with no reminder"
-            return f"Created task id={task['id']} \"{task['title']}\"{when}."
+            told = (
+                f"Reminder set for {friendly_when(task['remindAt'], tz, now)}: \u201c{task['title']}\u201d."
+                if task["remindAt"]
+                else f"Added \u201c{task['title']}\u201d to your list."
+            )
+            return f"Created task id={task['id']} \"{task['title']}\"{when}.", told
         if name == "update_task":
             changes: dict = {}
             if args.get("title"):
@@ -172,27 +221,32 @@ def _run_tool(name: str, args: dict, user_id: int, tz: timezone, outcome: dict) 
                 changes["remind_at"] = local_to_utc(args["remind_at"])
             task = tasks.update_task(conn, user_id, str(args.get("id", "")), **changes)
             if task is None:
-                return f"Error: no task with id={args.get('id')}."
+                return f"Error: no task with id={args.get('id')}.", None
             outcome["changed_tasks"] = True
-            return f"Updated \"{task['title']}\"."
+            dropped = ", reminder removed" if args.get("clear_reminder") else ""
+            return f"Updated \"{task['title']}\".", f"Updated \u201c{task['title']}\u201d{reminder(task) or dropped}."
         if name == "complete_task":
             task = tasks.update_task(conn, user_id, str(args.get("id", "")), done=True)
             if task is None:
-                return f"Error: no task with id={args.get('id')}."
+                return f"Error: no task with id={args.get('id')}.", None
             outcome["changed_tasks"] = True
-            return f"Marked \"{task['title']}\" done."
+            return f"Marked \"{task['title']}\" done.", f"Marked \u201c{task['title']}\u201d done."
         if name == "delete_task":
-            if not tasks.delete_task(conn, user_id, str(args.get("id", ""))):
-                return f"Error: no task with id={args.get('id')}."
+            task_id = str(args.get("id", ""))
+            title = next((t["title"] for t in tasks.list_tasks(conn, user_id) if t["id"] == task_id), None)
+            if title is None or not tasks.delete_task(conn, user_id, task_id):
+                return f"Error: no task with id={args.get('id')}.", None
             outcome["changed_tasks"] = True
-            return "Task deleted."
-    return f"Error: unknown tool {name}."
+            return "Task deleted.", f"Deleted \u201c{title}\u201d."
+    return f"Error: unknown tool {name}.", None
 
 
 def chat(user_id: int, message: str, history: list[dict], client_time: str | None) -> dict:
     provider = llm.get_provider()
     if isinstance(provider, llm.MockProvider):
         return mock_chat(user_id, message, client_time)
+    if getattr(provider, "dialect", "gemini") == "openai":
+        return _chat_openai(provider, user_id, message, history, client_time)
 
     now, tz = client_zone(client_time)
     outcome = {"reply": "", "changed_tasks": False, "look_at_screen": None}
@@ -221,18 +275,74 @@ def chat(user_id: int, message: str, history: list[dict], client_time: str | Non
 
         # The model's turn goes back verbatim (thought signatures included), then every result in one turn.
         contents.append(content)
-        responses = []
+        responses, confirmations = [], []
         for call in calls:
             name, args = call.get("name", ""), call.get("args") or {}
             if name == "look_at_screen":
                 outcome["look_at_screen"] = {"goal": str(args.get("goal") or message)[:500]}
                 outcome["reply"] = text
                 continue
-            result = _run_tool(name, args, user_id, tz, outcome)
+            result, confirmation = _run_tool(name, args, user_id, tz, now, outcome)
+            confirmations.append(confirmation)
             responses.append({"functionResponse": {"name": name, "response": {"result": result}}})
         if outcome["look_at_screen"]:
             return outcome
+        if confirmations and None not in confirmations:
+            outcome["reply"] = " ".join(confirmations)
+            return outcome
         contents.append({"role": "user", "parts": responses})
+
+    raise llm.LLMError("Alfred got stuck working that out. Try asking a simpler question.")
+
+
+def _chat_openai(provider, user_id: int, message: str, history: list[dict], client_time: str | None) -> dict:
+    """The same loop as chat(), for providers with an OpenAI-style API (Groq)."""
+    now, tz = client_zone(client_time)
+    outcome = {"reply": "", "changed_tasks": False, "look_at_screen": None}
+    messages = [
+        {"role": "user" if c["role"] == "user" else "assistant", "content": c["parts"][0]["text"]}
+        for c in _contents(history, message)
+    ]
+
+    for _ in range(MAX_TOOL_TURNS):
+        with get_db() as conn:
+            task_list = tasks.list_tasks(conn, user_id)
+        data = provider.complete({
+            "model": provider.chat_model,
+            "temperature": 0.3,
+            "reasoning_effort": "low",
+            "tools": OPENAI_TOOLS,
+            "messages": [{"role": "system", "content": system_prompt(task_list, now, tz)}, *messages],
+        })
+        try:
+            reply = data["choices"][0]["message"]
+        except (KeyError, IndexError) as error:
+            raise llm.LLMError("Alfred got an empty answer from the model, please try again") from error
+        calls = reply.get("tool_calls") or []
+        text = (reply.get("content") or "").strip()
+
+        if not calls:
+            outcome["reply"] = text or "Done."
+            return outcome
+
+        messages.append({"role": "assistant", "content": reply.get("content") or "", "tool_calls": calls})
+        confirmations = []
+        for call in calls:
+            name = call.get("function", {}).get("name", "")
+            try:
+                args = json.loads(call.get("function", {}).get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            if name == "look_at_screen":
+                outcome["look_at_screen"] = {"goal": str(args.get("goal") or message)[:500]}
+                outcome["reply"] = text
+                return outcome
+            result, confirmation = _run_tool(name, args, user_id, tz, now, outcome)
+            confirmations.append(confirmation)
+            messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
+        if confirmations and None not in confirmations:
+            outcome["reply"] = " ".join(confirmations)
+            return outcome
 
     raise llm.LLMError("Alfred got stuck working that out. Try asking a simpler question.")
 

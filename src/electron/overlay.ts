@@ -78,7 +78,7 @@ export function createOverlay(): Overlay {
       // SetCursorPos wants physical pixels; Electron hands out DIPs.
       const toPhysical = (p: { x: number; y: number }) => (screen.dipToScreenPoint ? screen.dipToScreenPoint(p) : p);
       const centre = { x: onScreen.x + onScreen.width / 2, y: onScreen.y + onScreen.height / 2 };
-      setTimeout(() => glideCursor(toPhysical(mouse), toPhysical(centre)), 650);
+      setTimeout(() => glideCursor(toPhysical(mouse), toPhysical(centre)), 300);
     }
     return onScreen;
   }

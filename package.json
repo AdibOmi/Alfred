@@ -12,14 +12,16 @@
     "postinstall": "electron-builder install-app-deps",
     "start": "concurrently -k -s first \"npm:dev:react\" \"npm:dev:electron\"",
     "dev:react": "vite",
-    "dev:electron": "wait-on tcp:5173 && npm run build:main && electron -r tsx/cjs src/electron/main.ts",
+    "dev:electron": "wait-on tcp:5173 && npm run build:main && node scripts/electron.js -r tsx/cjs src/electron/main.ts",
+    "setup": "node scripts/setup-backend.js",
     "build:main": "tsc -p tsconfig.build.json",
+    "icons": "node scripts/generate-icons.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build": "npm run build:main && vite build && electron-builder",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write .",
-    "selftest": "npm run build:main && concurrently -k -s first \"npm:dev:react\" \"wait-on tcp:5173 && electron -r tsx/cjs src/electron/main.ts --selftest\""
+    "selftest": "npm run build:main && concurrently -k -s first \"npm:dev:react\" \"wait-on tcp:5173 && node scripts/electron.js -r tsx/cjs src/electron/main.ts --selftest\""
   },
   "build": {
     "appId": "dev.alfred.assistant",

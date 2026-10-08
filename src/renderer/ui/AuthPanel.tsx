@@ -110,8 +110,8 @@ export function AuthPanel({ apiBase, onSignedIn, onClose }: AuthPanelProps) {
       </form>
 
       <p className="hint-text privacy-note">
-        Alfred takes a screenshot only when a question actually needs one. It is sent to the AI to find the next
-        step and never saved. Your password is hashed and your session token is encrypted with your OS keychain.
+        Alfred sends a screenshot to the AI only when a question is about your screen, and never saves one. Your
+        password is hashed and your session token is encrypted with your OS keychain.
       </p>
     </div>
   );

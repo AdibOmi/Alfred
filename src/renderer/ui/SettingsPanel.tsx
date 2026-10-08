@@ -111,8 +111,8 @@ export function SettingsPanel({ state, onChanged, onBack }: SettingsPanelProps) 
       {error && <p className="hint-text hint-error">{error}</p>}
 
       <p className="hint-text privacy-note">
-        Press <b>Ctrl/Cmd + Shift + A</b> anywhere to summon Alfred. A screenshot is taken only when a question needs
-        one, sent to the AI to find the next step, and never saved. Tasks and history are stored with your account.
+        Press <b>Ctrl/Cmd + Shift + A</b> anywhere to summon Alfred. A screenshot goes to the AI only when a question
+        is about your screen, and is never saved. Tasks and history are stored with your account.
       </p>
     </div>
   );

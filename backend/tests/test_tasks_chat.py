@@ -146,12 +146,11 @@ class ScriptedGemini:
         return {"candidates": [{"content": {"role": "model", "parts": self.turns.pop(0)}}]}
 
 
-def test_gemini_tool_loop_runs_task_tools_then_answers(client, auth, monkeypatch):
+def test_gemini_task_tools_confirm_without_a_second_model_call(client, auth, monkeypatch):
     from app import llm
 
     fake = ScriptedGemini([
         [{"functionCall": {"name": "create_task", "args": {"title": "Call mum", "remind_at": "2030-02-01T18:00:00"}}, "thoughtSignature": "abc"}],
-        [{"text": "Reminder set for 6pm on 1 February."}],
     ])
     monkeypatch.setattr(llm, "get_provider", lambda: fake)
     res = client.post(
@@ -160,14 +159,91 @@ def test_gemini_tool_loop_runs_task_tools_then_answers(client, auth, monkeypatch
               "history": [{"role": "assistant", "content": "hello"}, {"role": "user", "content": "hi"}]},
         headers=auth,
     ).json()
-    assert res == {"reply": "Reminder set for 6pm on 1 February.", "changed_tasks": True, "look_at_screen": None}
+    assert res == {
+        "reply": "Reminder set for Fri 1 Feb at 6:00 PM: \u201cCall mum\u201d.",
+        "changed_tasks": True,
+        "look_at_screen": None,
+    }
+    assert len(fake.bodies) == 1  # the confirmation came from the tool result, not a second call
+    assert fake.bodies[0]["contents"][0]["role"] == "user"  # leading assistant turn trimmed
     assert client.get("/tasks", headers=auth).json()[0]["remindAt"] == "2030-02-01T12:00:00+00:00"
 
+
+def test_gemini_failed_tool_goes_back_to_the_model(client, auth, monkeypatch):
+    from app import llm
+
+    fake = ScriptedGemini([
+        [{"functionCall": {"name": "complete_task", "args": {"id": "nope"}}, "thoughtSignature": "abc"}],
+        [{"text": "I couldn't find that task."}],
+    ])
+    monkeypatch.setattr(llm, "get_provider", lambda: fake)
+    res = client.post("/chat", json={"message": "mark the dentist one done"}, headers=auth).json()
+    assert res == {"reply": "I couldn't find that task.", "changed_tasks": False, "look_at_screen": None}
+
     second = fake.bodies[1]["contents"]
-    assert second[0]["role"] == "user"  # leading assistant turn trimmed
     assert second[-2]["parts"][0]["thoughtSignature"] == "abc"  # model turn echoed verbatim
-    assert "Created task" in second[-1]["parts"][0]["functionResponse"]["response"]["result"]
-    assert "Call mum" in fake.bodies[1]["system_instruction"]["parts"][0]["text"]  # fresh task list each turn
+    assert "no task with id=nope" in second[-1]["parts"][0]["functionResponse"]["response"]["result"]
+
+
+class ScriptedGroq:
+    """Stands in for GroqProvider.complete with canned OpenAI-style responses."""
+
+    name, model, chat_model, dialect = "groq", "scripted-vision", "scripted-chat", "openai"
+
+    def __init__(self, turns):
+        self.turns, self.bodies = list(turns), []
+
+    def complete(self, body):
+        self.bodies.append(body)
+        return {"choices": [{"message": self.turns.pop(0)}]}
+
+
+def _call(name, args, call_id="call_1"):
+    import json
+
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+
+def test_groq_tool_loop_runs_task_tools_in_one_call(client, auth, monkeypatch):
+    from app import llm
+
+    fake = ScriptedGroq([{"role": "assistant", "content": None, "tool_calls": [_call("create_task", {"title": "Buy milk"})]}])
+    monkeypatch.setattr(llm, "get_provider", lambda: fake)
+    res = client.post("/chat", json={"message": "add buy milk to my list"}, headers=auth).json()
+    assert res == {"reply": "Added \u201cBuy milk\u201d to your list.", "changed_tasks": True, "look_at_screen": None}
+    body = fake.bodies[0]
+    assert body["model"] == "scripted-chat"
+    assert body["messages"][0]["role"] == "system" and body["messages"][-1] == {"role": "user", "content": "add buy milk to my list"}
+    assert {t["function"]["name"] for t in body["tools"]} >= {"look_at_screen", "create_task"}
+    assert body["tools"][0]["function"]["parameters"]["type"] == "object"
+
+
+def test_groq_tool_loop_hands_screen_questions_to_the_desktop(client, auth, monkeypatch):
+    from app import llm
+
+    fake = ScriptedGroq([{"role": "assistant", "content": "", "tool_calls": [_call("look_at_screen", {"goal": "add page numbers"})]}])
+    monkeypatch.setattr(llm, "get_provider", lambda: fake)
+    res = client.post("/chat", json={"message": "where do I add page numbers"}, headers=auth).json()
+    assert res["look_at_screen"] == {"goal": "add page numbers"}
+
+
+def test_groq_plain_answers_pass_straight_through(client, auth, monkeypatch):
+    from app import llm
+
+    fake = ScriptedGroq([{"role": "assistant", "content": "Good evening."}])
+    monkeypatch.setattr(llm, "get_provider", lambda: fake)
+    res = client.post("/chat", json={"message": "hello"}, headers=auth).json()
+    assert res == {"reply": "Good evening.", "changed_tasks": False, "look_at_screen": None}
+
+
+def test_friendly_when_reads_like_a_person():
+    from app.agent import friendly_when
+
+    plus6 = timezone(timedelta(hours=6))
+    now = datetime(2030, 1, 15, 12, 0, tzinfo=plus6)
+    assert friendly_when("2030-01-15T11:00:00+00:00", plus6, now) == "today at 5:00 PM"
+    assert friendly_when("2030-01-16T03:30:00+00:00", plus6, now) == "tomorrow at 9:30 AM"
+    assert friendly_when("2030-01-18T11:00:00+00:00", plus6, now) == "Fri 18 Jan at 5:00 PM"
 
 
 def test_gemini_tool_loop_hands_screen_questions_to_the_desktop(client, auth, monkeypatch):

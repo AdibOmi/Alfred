@@ -5,34 +5,42 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
   <title>Alfred overlay</title>
   <style>
+    /* Gotham palette: matte black, white light. The arrow is black with a white edge so it reads
+       on both light and dark apps; the ring is a cold white glow. */
+    :root {
+      --ink: #0b0c0f;
+      --light: #f4f5f7;
+      --glow: rgba(240, 244, 250, 0.85);
+      --dim: rgba(5, 6, 10, 0.32);
+    }
     html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; font-family: "Segoe UI", system-ui, sans-serif; }
     #ring {
-      position: absolute; border: 3px solid #e2b04a; border-radius: 10px; opacity: 0;
-      box-shadow: 0 0 0 9999px rgba(10, 12, 20, 0.28), 0 0 24px 4px rgba(226, 176, 74, 0.75);
-      transition: opacity 250ms ease;
+      position: absolute; border: 2px solid var(--light); border-radius: 10px; opacity: 0;
+      box-shadow: 0 0 0 9999px var(--dim), 0 0 0 1px var(--ink), 0 0 22px 3px var(--glow);
+      transition: opacity 160ms ease;
     }
     #ring.on { opacity: 1; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse {
-      0%, 100% { box-shadow: 0 0 0 9999px rgba(10, 12, 20, 0.28), 0 0 18px 2px rgba(226, 176, 74, 0.6); }
-      50%      { box-shadow: 0 0 0 9999px rgba(10, 12, 20, 0.28), 0 0 34px 10px rgba(226, 176, 74, 0.95); }
+      0%, 100% { box-shadow: 0 0 0 9999px var(--dim), 0 0 0 1px var(--ink), 0 0 14px 2px rgba(240, 244, 250, 0.55); }
+      50%      { box-shadow: 0 0 0 9999px var(--dim), 0 0 0 1px var(--ink), 0 0 30px 8px rgba(240, 244, 250, 0.95); }
     }
     #ghost {
       position: absolute; width: 34px; height: 34px; left: 0; top: 0; opacity: 0;
-      filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.45));
-      transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms ease;
+      filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.55)) drop-shadow(0 4px 8px rgba(0, 0, 0, 0.55));
+      transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1), opacity 120ms ease;
     }
     #ghost.on { opacity: 1; }
-    #ghost.tap { animation: tap 0.9s ease-in-out 900ms 3; }
+    #ghost.tap { animation: tap 0.8s ease-in-out 480ms 3; }
     @keyframes tap { 50% { scale: 0.82; } }
     #caption {
       position: absolute; max-width: 360px; padding: 12px 14px; border-radius: 12px; opacity: 0;
-      background: #1b1e2b; color: #f5efe2; font-size: 15px; line-height: 1.4;
-      border: 1px solid rgba(226, 176, 74, 0.6); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
-      transition: opacity 250ms ease 600ms;
+      background: rgba(12, 13, 17, 0.96); color: var(--light); font-size: 15px; line-height: 1.4;
+      border: 1px solid rgba(244, 245, 247, 0.28); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      transition: opacity 180ms ease 180ms;
     }
     #caption.on { opacity: 1; }
-    #caption .meta { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #e2b04a; margin-bottom: 4px; font-weight: 600; }
-    #caption .label { color: #e2b04a; font-weight: 600; }
+    #caption .meta { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #9ea3ad; margin-bottom: 4px; font-weight: 600; }
+    #caption .label { color: #ffffff; font-weight: 600; }
     #caption.centre { left: 50% !important; top: 48px !important; transform: translateX(-50%); text-align: center; }
     .fade { opacity: 0.0 !important; transition: opacity 1.2s ease !important; animation: none !important; }
   </style>
@@ -40,7 +48,7 @@
 <body>
   <div id="ring"></div>
   <svg id="ghost" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M4 2.5 L4 19.5 L8.6 15.4 L11.6 22 L14.4 20.8 L11.5 14.3 L17.8 14.3 Z" fill="#e2b04a" stroke="#1b1e2b" stroke-width="1.4" stroke-linejoin="round"/>
+    <path d="M4 2.5 L4 19.5 L8.6 15.4 L11.6 22 L14.4 20.8 L11.5 14.3 L17.8 14.3 Z" fill="#0b0c0f" stroke="#f4f5f7" stroke-width="1.5" stroke-linejoin="round"/>
   </svg>
   <div id="caption"><div class="meta"></div><div class="text"></div></div>
   <script src="overlay.js"></script>

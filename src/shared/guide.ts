@@ -26,6 +26,8 @@ export interface AssistResponse {
   done: boolean;
   from_cache: boolean;
   provider: string;
+  /** False when the model places boxes loosely: only point once the target is confirmed on screen. */
+  trusted_boxes?: boolean;
 }
 
 /**

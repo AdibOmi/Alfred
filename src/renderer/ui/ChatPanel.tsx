@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { AssistResponse, ChatTurn } from '../../electron/preload';
 import { BridgeError, call } from '../bridge';
+import { isClearlyAboutScreen } from '../../shared/route';
 
 export interface ChatMessage {
   id: number;
@@ -55,6 +56,13 @@ export function ChatPanel({ messages, setMessages, guide, setGuide, onOpenSettin
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, error, sending, guide]);
+
+  const lastQuestion = [...messages].reverse().find((entry) => entry.role === 'user')?.content ?? '';
+  const status = guide
+    ? 'Taking a fresh look…'
+    : isClearlyAboutScreen(lastQuestion)
+      ? 'Looking at your screen…'
+      : 'Thinking…';
 
   const say = (entry: Omit<ChatMessage, 'id'>) => setMessages((prev) => [...prev, { ...entry, id: nextId++ }]);
 
@@ -181,7 +189,7 @@ export function ChatPanel({ messages, setMessages, guide, setGuide, onOpenSettin
         {sending && (
           <div className="chat-entry assistant">
             <span className="chat-author">Alfred</span>
-            <p className="hint-text">{guide ? 'Taking a fresh look…' : 'Thinking…'}</p>
+            <p className="hint-text thinking">{status}</p>
           </div>
         )}
 
