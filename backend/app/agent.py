@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 from . import llm, tasks
@@ -156,7 +157,7 @@ def system_prompt(task_list: list[dict], now: datetime, tz: timezone) -> str:
         "You are Alfred, a calm, courteous butler that lives on the user's desktop. You do two things: guide",
         "people through software on their screen, and keep their to-dos and reminders.",
         "",
-        f"Current local time: {now.strftime('%A %d %B %Y, %H:%M')} (UTC{now.strftime('%z')}).",
+        f"Current local time: {now.strftime('%A %d %B %Y, %H:%M:%S')} (UTC{now.strftime('%z')}).",
         "",
         task_section,
         "",
@@ -241,8 +242,22 @@ def _run_tool(name: str, args: dict, user_id: int, tz: timezone, now: datetime, 
     return f"Error: unknown tool {name}.", None
 
 
+@contextmanager
+def _no_failover_after_first(turn: int):
+    """A rate limit on a later turn must not rerun the chat on the backup: tools may already have changed tasks."""
+    try:
+        yield
+    except llm.RateLimited as error:
+        if turn:
+            raise llm.LLMError(str(error)) from error
+        raise
+
+
 def chat(user_id: int, message: str, history: list[dict], client_time: str | None) -> dict:
-    provider = llm.get_provider()
+    return llm.with_backup(lambda provider: _chat_with(provider, user_id, message, history, client_time))
+
+
+def _chat_with(provider, user_id: int, message: str, history: list[dict], client_time: str | None) -> dict:
     if isinstance(provider, llm.MockProvider):
         return mock_chat(user_id, message, client_time)
     if getattr(provider, "dialect", "gemini") == "openai":
@@ -252,15 +267,16 @@ def chat(user_id: int, message: str, history: list[dict], client_time: str | Non
     outcome = {"reply": "", "changed_tasks": False, "look_at_screen": None}
     contents = _contents(history, message)
 
-    for _ in range(MAX_TOOL_TURNS):
+    for turn in range(MAX_TOOL_TURNS):
         with get_db() as conn:
             task_list = tasks.list_tasks(conn, user_id)
-        data = provider.generate({
-            "system_instruction": {"parts": [{"text": system_prompt(task_list, now, tz)}]},
-            "contents": contents,
-            "tools": TOOLS,
-            "generationConfig": {"temperature": 0.3},
-        })
+        with _no_failover_after_first(turn):
+            data = provider.generate({
+                "system_instruction": {"parts": [{"text": system_prompt(task_list, now, tz)}]},
+                "contents": contents,
+                "tools": TOOLS,
+                "generationConfig": {"temperature": 0.3},
+            })
         try:
             content = data["candidates"][0]["content"]
         except (KeyError, IndexError) as error:
@@ -304,16 +320,17 @@ def _chat_openai(provider, user_id: int, message: str, history: list[dict], clie
         for c in _contents(history, message)
     ]
 
-    for _ in range(MAX_TOOL_TURNS):
+    for turn in range(MAX_TOOL_TURNS):
         with get_db() as conn:
             task_list = tasks.list_tasks(conn, user_id)
-        data = provider.complete({
-            "model": provider.chat_model,
-            "temperature": 0.3,
-            "reasoning_effort": "low",
-            "tools": OPENAI_TOOLS,
-            "messages": [{"role": "system", "content": system_prompt(task_list, now, tz)}, *messages],
-        })
+        with _no_failover_after_first(turn):
+            data = provider.complete({
+                "model": provider.chat_model,
+                "temperature": 0.3,
+                "reasoning_effort": "low",
+                "tools": OPENAI_TOOLS,
+                "messages": [{"role": "system", "content": system_prompt(task_list, now, tz)}, *messages],
+            })
         try:
             reply = data["choices"][0]["message"]
         except (KeyError, IndexError) as error:

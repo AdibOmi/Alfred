@@ -70,6 +70,10 @@ class LLMError(RuntimeError):
     pass
 
 
+class RateLimited(LLMError):
+    """The provider's free-tier quota is used up for now; the backup provider may still have room."""
+
+
 # One pooled client for every provider: reusing the TLS connection saves a handshake (often
 # 100-300 ms) on every call after the first, which is most of the overhead of a fast model.
 _http = httpx.Client(timeout=config.LLM_TIMEOUT_SECONDS, limits=httpx.Limits(max_keepalive_connections=8))
@@ -214,7 +218,7 @@ class GeminiProvider:
                 last_error = f"model {model} not found"
                 continue
             if response.status_code == 429:
-                raise LLMError("Gemini free-tier rate limit reached, please wait a minute and try again")
+                raise RateLimited("Gemini free-tier rate limit reached, please wait a minute and try again")
             if response.status_code in (400, 401, 403) and "API_KEY" in response.text.upper():
                 raise LLMError("The server's GEMINI_API_KEY was rejected. Check backend/.env")
             if response.status_code >= 400:
@@ -293,13 +297,13 @@ class GroqProvider:
                 if attempt == 0 and wait is not None and wait <= 8:
                     time.sleep(wait + 0.2)
                     continue
-                raise LLMError("Groq free-tier rate limit reached, please wait a few seconds and try again")
+                raise RateLimited("Groq free-tier rate limit reached, please wait a few seconds and try again")
             if response.status_code == 401:
                 raise LLMError("The server's GROQ_API_KEY was rejected. Check your .env")
             if response.status_code >= 400:
                 raise LLMError(f"Groq error {response.status_code}: {response.text[:300]}")
             return response.json()
-        raise LLMError("Groq free-tier rate limit reached, please wait a few seconds and try again")
+        raise RateLimited("Groq free-tier rate limit reached, please wait a few seconds and try again")
 
 
 def _retry_after(response: httpx.Response) -> float | None:
@@ -351,6 +355,7 @@ class MockProvider:
 
 Provider = GeminiProvider | GroqProvider | MockProvider
 _provider: Provider | None = None
+_backup: Provider | None = None
 
 
 def get_provider() -> Provider:
@@ -363,3 +368,26 @@ def get_provider() -> Provider:
         else:
             _provider = MockProvider()
     return _provider
+
+
+def get_backup_provider() -> Provider | None:
+    """The other free provider, when its key is set too: used when the main one hits its rate limit."""
+    global _backup
+    if _backup is None:
+        if config.LLM_PROVIDER != "gemini" and config.GEMINI_API_KEY:
+            _backup = GeminiProvider(config.GEMINI_API_KEY, config.GEMINI_MODELS)
+        elif config.LLM_PROVIDER != "groq" and config.GROQ_API_KEY:
+            _backup = GroqProvider(config.GROQ_API_KEY, config.GROQ_VISION_MODEL, config.GROQ_CHAT_MODEL)
+    return _backup
+
+
+def with_backup(call):
+    """Runs call(provider) on the main provider, and once more on the backup if the main one is rate limited."""
+    try:
+        return call(get_provider())
+    except RateLimited:
+        backup = get_backup_provider()
+        if backup is None:
+            raise
+        logger.info("%s is rate limited, falling back to %s", get_provider().name, backup.name)
+        return call(backup)

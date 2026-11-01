@@ -10,9 +10,9 @@ import type { AppState, AssistResponse } from '../electron/preload';
 
 type View = 'chat' | 'tasks' | 'history' | 'settings';
 
-// The icon is both a button and a drag handle. A press that moves less than this
-// many pixels is a click; anything more drags the window. (An OS drag region can't
-// be used: on Windows it swallows the click.)
+// The icon is both a button and a drag handle, and so is the open panel's header.
+// A press that moves less than this many pixels is a click; anything more drags the
+// window. (An OS drag region can't be used: on Windows it swallows the click.)
 const DRAG_THRESHOLD = 4;
 let press: { x: number; y: number; dragging: boolean } | null = null;
 
@@ -20,6 +20,13 @@ function startIconPress(event: ReactPointerEvent<HTMLDivElement>) {
   if (event.button !== 0) return;
   event.currentTarget.setPointerCapture(event.pointerId);
   press = { x: event.screenX, y: event.screenY, dragging: false };
+}
+
+// Only the header row moves the open panel, and never from one of its buttons.
+function startPanelPress(event: ReactPointerEvent<HTMLDivElement>) {
+  const target = event.target as Element;
+  if (!target.closest('.panel-header-row') || target.closest('button, input, select, textarea, a')) return;
+  startIconPress(event);
 }
 
 function moveIconPress(event: ReactPointerEvent<HTMLDivElement>) {
@@ -141,7 +148,13 @@ export function App() {
       )}
 
       {expanded && (
-        <div className="panel-shell">
+        <div
+          className="panel-shell"
+          onPointerDown={startPanelPress}
+          onPointerMove={moveIconPress}
+          onPointerUp={(event) => endIconPress(event, null)}
+          onPointerCancel={(event) => endIconPress(event, null)}
+        >
           {state === null && <p className="hint-text">Loading…</p>}
 
           {state !== null && view === 'settings' && (

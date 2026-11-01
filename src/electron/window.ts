@@ -73,7 +73,7 @@ export interface AlfredWindow {
   showView: (view: AlfredView) => void;
   /** Puts the panel back in the top-most band, above the pointer overlay. */
   keepOnTop: () => void;
-  /** Manual dragging of the collapsed icon (an OS drag region would swallow its clicks). */
+  /** Manual dragging of the icon or the open panel (an OS drag region would swallow clicks). */
   beginDrag: () => void;
   dragBy: (dx: number, dy: number) => void;
   endDrag: () => void;
@@ -195,24 +195,26 @@ export function createFloatingWindow(): AlfredWindow {
   // The icon used to be a CSS drag region, but on Windows a drag region eats mouse
   // clicks, so the icon could be moved but never opened. The renderer now reports
   // pointer movement and decides click vs drag itself; this just moves the window.
-  let dragOrigin: { x: number; y: number } | null = null;
+  // The open panel drags the same way (by its header), carrying the icon spot with it.
+  let dragOrigin: Rect | null = null;
 
   function beginDrag() {
-    if (expanded) return;
-    const bounds = window.getBounds();
-    dragOrigin = { x: bounds.x, y: bounds.y };
+    dragOrigin = window.getBounds();
   }
 
   function dragBy(dx: number, dy: number) {
-    if (!dragOrigin || expanded) return;
-    window.setBounds({ x: Math.round(dragOrigin.x + dx), y: Math.round(dragOrigin.y + dy), width: ICON_SIZE, height: ICON_SIZE });
+    if (!dragOrigin) return;
+    const { width, height } = dragOrigin;
+    window.setBounds({ x: Math.round(dragOrigin.x + dx), y: Math.round(dragOrigin.y + dy), width, height });
   }
 
   function endDrag() {
     if (!dragOrigin) return;
     dragOrigin = null;
     const bounds = window.getBounds();
-    setIconPosition({ x: bounds.x, y: bounds.y });
+    // The panel opens with its bottom-right corner on the icon's, so that corner is where the icon goes back to.
+    if (expanded) setIconPosition({ x: bounds.x + bounds.width - ICON_SIZE, y: bounds.y + bounds.height - ICON_SIZE });
+    else setIconPosition({ x: bounds.x, y: bounds.y });
   }
 
   function resetPosition() {

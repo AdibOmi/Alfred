@@ -143,18 +143,27 @@ def _decode(screenshot: str) -> Screenshot:
 
 
 def _ask_alfred(goal: str, shot: Screenshot, completed: list[str], message: str | None) -> tuple[dict, bool]:
-    """Cache-first call to the vision model. Returns (answer, from_cache)."""
-    provider = llm.get_provider()
-    key = cache.make_key(provider.name, provider.model, shot.phash, goal.strip().lower(), completed, (message or "").strip().lower())
-    cached = cache.get(key)
-    if cached is not None:
-        return cached, True
+    """Cache-first call to the vision model, falling back to the backup provider when rate limited.
+
+    Returns (answer, from_cache). The answer remembers which provider wrote it, since that
+    decides whether its box can be trusted as is."""
+    request = llm.StepRequest(goal=goal, screenshot_jpeg=shot.jpeg, completed_steps=completed, user_message=message)
+
+    def ask(provider) -> tuple[dict, bool]:
+        key = cache.make_key(provider.name, provider.model, shot.phash, goal.strip().lower(), completed, (message or "").strip().lower())
+        cached = cache.get(key)
+        if cached is not None:
+            return cached, True
+        answer = provider.next_step(request)
+        answer["provider"] = provider.name
+        answer["trusted_boxes"] = getattr(provider, "trusted_boxes", True)
+        cache.put(key, answer)
+        return answer, False
+
     try:
-        answer = provider.next_step(llm.StepRequest(goal=goal, screenshot_jpeg=shot.jpeg, completed_steps=completed, user_message=message))
+        return llm.with_backup(ask)
     except llm.LLMError as error:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(error)) from error
-    cache.put(key, answer)
-    return answer, False
 
 
 def _record_answer(conn: sqlite3.Connection, session_id: int, answer: dict, from_cache: bool) -> StepOut:
@@ -193,8 +202,8 @@ def _response(session_id: int, answer: dict, step: StepOut, from_cache: bool) ->
         steps_remaining=answer["steps_remaining"],
         done=answer["done"],
         from_cache=from_cache,
-        provider=llm.get_provider().name,
-        trusted_boxes=getattr(llm.get_provider(), "trusted_boxes", True),
+        provider=answer.get("provider", llm.get_provider().name),
+        trusted_boxes=answer.get("trusted_boxes", getattr(llm.get_provider(), "trusted_boxes", True)),
     )
 
 

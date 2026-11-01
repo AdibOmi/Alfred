@@ -268,3 +268,19 @@ def test_gemini_errors_become_502(client, auth, monkeypatch):
     monkeypatch.setattr(llm, "get_provider", lambda: Down())
     res = client.post("/chat", json={"message": "add eggs to my list"}, headers=auth)
     assert res.status_code == 502 and "rate limit" in res.json()["error"]
+
+
+def test_rate_limited_chat_falls_back_to_the_backup_provider(client, auth, monkeypatch):
+    from app import llm
+
+    class Limited:
+        name, model = "groq", "limited"
+
+        def generate(self, body):
+            raise llm.RateLimited("Groq free-tier rate limit reached, please wait a few seconds and try again")
+
+    backup = ScriptedGemini([[{"text": "At your service."}]])
+    monkeypatch.setattr(llm, "get_provider", lambda: Limited())
+    monkeypatch.setattr(llm, "get_backup_provider", lambda: backup)
+    res = client.post("/chat", json={"message": "hello"}, headers=auth)
+    assert res.status_code == 200 and res.json()["reply"] == "At your service."
